@@ -1,0 +1,167 @@
+package nape.dynamics;
+$(import);
+
+!!/**
+!! * InteractionFilter provides bit flags for low-level filtering of interactions.
+!! * <br/><br/>
+!! * For a given interaction type, two Shapes will be permitted to interact only if
+!! * <code>(shape1.group & shape2.mask) != 0 && (shape2.group & shape1.mask) != 0</code>
+!! * <br/><br/>
+!! * There are 32 real groups corresponding to a set bit in the group/mask fields. For instance
+!! * a group value of 0x120 corresponds to the 'real' groups 5 and 8 as <code>0x120 = (1<<5) | (1<<8)</code>
+!! * <br/><br/>
+!! * Nape provides group/mask for each interaction type. The actual precedence of interactions
+!! * is further defined simply as: Sensor > Fluid > Collision.
+!! * <br/>
+!! * Two static bodies can never interact, and with the exception of sensor interaction, at least one
+!! * of the two bodies must be dynamic.
+!! * <br/>
+!! * Sensor interactions have the highest precedence, followed by fluid and then collisions.
+!! * Sensor interaction is permitted only if one of the shapes is sensorEnabled, whilst fluid
+!! * is permitted only if one of the shapes is fluidEnabled.
+!! * <pre>
+!! * if ((shapeA.sensorEnabled || shapeB.sensorEnabled) && shapeA.filter.shouldSense(shapeB.filter)) {
+!! *     SENSOR INTERACTION!!
+!! * }
+!! * else if (bodyA.isDynamic() || bodyB.isDynamic()) {
+!! *     if ((shapeA.fluidEnabled || shapeB.fluidEnabled) && shapeA.filter.shouldFlow(shapeB.filter)) {
+!! *         FLUID INTERACTION!!
+!! *     }
+!! *     else if (shapeA.filter.shouldCollide(shapeB.filter)) {
+!! *         COLLISION INTERACTION!!
+!! *     }
+!! * }
+!! * </pre>
+!! */
+@:final class InteractionFilter {
+
+    FeatureMix(InteractionFilter,filter)
+
+    $(mixin prop(n)
+        property(n,Int, {
+            return pr(inner).n;
+        }, {
+            if(this.n!=n) {
+                pr(inner).n = n;
+                pr(inner).invalidate();
+            }
+        })
+    );
+
+    !!/**
+    !! * Group bitfield for Collision type interactions.
+    !! * @default 1
+    !! */
+    prop(collisionGroup)
+    !!/**
+    !! * Mask bitfield for Collision type interactions.
+    !! * @default -1 (all bits set)
+    !! */
+    prop(collisionMask)
+
+    !!/**
+    !! * Group bitfield for Sensor type interactions.
+    !! * @default 1
+    !! */
+    prop(sensorGroup)
+    !!/**
+    !! * Mask bitfield for Sensor type interactions.
+    !! * @default -1 (all bits set)
+    !! */
+    prop(sensorMask)
+
+    !!/**
+    !! * Group bitfield for Fluid type interactions.
+    !! * @default 1
+    !! */
+    prop(fluidGroup)
+    !!/**
+    !! * Mask bitfield for Fluid type interactions.
+    !! * @default -1 (all bits set)
+    !! */
+    prop(fluidMask)
+
+    !!/**
+    !! * Construct a new InteractionFilter.
+    !! *
+    !! * @param collisionGroup The Group bitfield for Collision interactions. (default 1)
+    !! * @param collisionMask  The Mask bitfield for Collision interactions. (default -1)
+    !! * @param sensorGroup    The Group bitfield for Sensor interactions. (default 1)
+    !! * @param sensorMask     The Mask bitfield for Sensor interactions. (default -1)
+    !! * @param fluidGroup     The Group bitfield for Fluid interactions. (default 1)
+    !! * @param fluidMask      The Mask bitfield for Fluid interactions. (default -1)
+    !! * @return The newly constructed InteractionFilter.
+    !! */
+    flibopts(6)
+    public function new(collisionGroup=1,collisionMask=-1,sensorGroup=1,sensorMask=-1,fluidGroup=1,fluidMask=-1) {
+        Get(PR(InteractionFilter), pr(inner));
+        pr(inner).outer = this;
+
+        this.collisionGroup = collisionGroup;
+        this.collisionMask = collisionMask;
+        this.sensorGroup = sensorGroup;
+        this.sensorMask = sensorMask;
+        this.fluidGroup = fluidGroup;
+        this.fluidMask = fluidMask;
+    }
+
+    !!/**
+    !! * Determine if objects are permitted to collide based on InteractionFilters
+    !! * <br/><br/>
+    !! * A collision type interaction can occur only if this returns True.
+    !! *
+    !! * @param filter The filter to evaluate possibility of collision with.
+    !! * @return True, if based on interaction filters only the two objects would be able to collide.
+    !! * @throws # If filter is null.
+    !! */
+    keep public function shouldCollide(filter:InteractionFilter) {
+        DEBUG(if (filter==null) throw "Error: filter argument cannot be null for shouldCollide";)
+        return pr(inner).shouldCollide(filter.pr(inner));
+    }
+
+    !!/**
+    !! * Determine if objects are permitted to sense based on InteractionFilters
+    !! * <br/><br/>
+    !! * A sensor type interaction can occur only if this returns True.
+    !! *
+    !! * @param filter The filter to evaluate possibility of sensor with.
+    !! * @return True, if based on interaction filters only the two objects would be able to sense.
+    !! * @throws # If filter is null.
+    !! */
+    keep public function shouldSense  (filter:InteractionFilter) {
+        DEBUG(if (filter==null) throw "Error: filter argument cannot be null for shouldSense";)
+        return pr(inner).shouldSense(filter.pr(inner));
+    }
+
+    !!/**
+    !! * Determine if objects are permitted to interact as fluids based on InteractionFilters
+    !! * <br/><br/>
+    !! * A fluid type interaction can occur only if this returns True.
+    !! *
+    !! * @param filter The filter to evaluate possibility of fluid with.
+    !! * @return True, if based on interaction filters only the two objects would be able to interact as fluids.
+    !! * @throws # If filter is null.
+    !! */
+    keep public function shouldFlow(filter:InteractionFilter) {
+        DEBUG(if (filter==null) throw "Error: filter argument cannot be null for shouldFlow";)
+        return pr(inner).shouldFlow(filter.pr(inner));
+    }
+
+    !!/**
+    !! * Produce a copy of this InteractionFilter
+    !! *
+    !! * @return The copy of this filter.
+    !! */
+    keep public function copy() {
+        return new InteractionFilter(collisionGroup,collisionMask,sensorGroup,sensorMask,fluidGroup,fluidMask);
+    }
+
+    !!/**
+    !! * @private
+    !! */
+    keep public function toString() {
+        $(mixin hex(n) StringTools.$hex(n,8));
+        return "{ collision: "+hex(collisionGroup)+"~"+hex(collisionMask)+" sensor: "+hex(sensorGroup)+"~"+hex(sensorMask)+" fluid: "+hex(fluidGroup)+"~"+hex(fluidMask)+" }";
+    }
+
+}

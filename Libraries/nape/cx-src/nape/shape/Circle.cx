@@ -1,0 +1,81 @@
+package nape.shape;
+$(import);
+
+!!/**
+!! * Shape subtype representing a Circle
+!! */
+@:final class Circle extends Shape {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner_zn):PR(Circle) = null;
+
+    !!/**
+    !! * Construct a new Circle
+    !! *
+    !! * @param radius The radius of the circle, this value must be positive.
+    !! * @param localCOM The local offset for the circle. (default &#40;0,0&#41;)
+    !! * @param material The material for this circle. (default new Material&#40;&#41;)
+    !! * @param filter The interaction filter for this circle.
+    !! *               (default new InteractionFilter&#40;&#41;)
+    !! * @return The constructed Circle
+    !! * @throws # If radius is not strictly positive
+    !! * @throws # If localCOM is non-null, but has been disposed of.
+    !! */
+    flibopts(3)
+    public function new(radius:Float, localCOM:Vec2=null, material:Material=null, filter:InteractionFilter=null) {
+        DEBUG(Shape.pr(internalAlloc) = true; super(); Shape.pr(internalAlloc) = false;)
+        RELEASE(super();)
+
+        pr(inner_zn) = new PR(Circle)();
+        pr(inner_zn).outer = this;
+        pr(inner_zn).outer_zn = this;
+        pr(inner) = pr(inner_zn);
+        pr(inner_i) = pr(inner);
+        pr(inner_i).outer_i = this;
+
+        this.radius = radius;
+        if(localCOM==null) vec_set(pr(inner).localCOM,0,0);
+        else {
+            Disposed(localCOM,Vec2);
+            vec_set(pr(inner).localCOM,localCOM.);
+            WEAK(localCOM);
+        }
+
+        if(material==null)
+            Get(PR(Material), pr(inner).material);
+        else this.material = material;
+
+        if(filter==null)
+            Get(PR(InteractionFilter), pr(inner).filter);
+        else this.filter = filter;
+
+        //implicit ANY type.
+        pr(inner_i).insert_cbtype(CbType.ANY_SHAPE.pr(inner));
+    }
+
+    !!/**
+    !! * Radius of circle
+    !! * <br/><br/>
+    !! * This value must be strictly positive, and attempting to set this value
+    !! * whilst this Circle is part of a static Body inside a Space will result
+    !! * in a debug time error.
+    !! */
+    property(radius,Float, {
+        return pr(inner_zn).radius;
+    }, {
+        pr(inner).immutable_midstep("Circle::radius");
+        DEBUG(if(pr(inner).body!=null && pr(inner).body.isStatic() && pr(inner).body.space!=null)
+            throw "Error: Cannot modifiy radius of Circle contained in static object once added to space";
+        )
+        if(radius!=this.radius) {
+            DEBUG(
+                if(isNaN(radius))   throw "Error: Circle::radius cannot be NaN";
+                if(radius<Config.epsilon) throw "Error: Circle::radius ("+radius+") must be > Config.epsilon";
+                if(radius>PR(Const).FMAX)    throw "Error: Circle::radius ("+radius+") must be < PR(Const).FMAX";
+            )
+            pr(inner_zn).radius = radius;
+            pr(inner_zn).invalidate_radius();
+        }
+    })
+}

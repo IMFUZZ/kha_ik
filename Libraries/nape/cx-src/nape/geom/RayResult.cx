@@ -1,0 +1,71 @@
+package nape.geom;
+$(import);
+
+!!/**
+!! * Class representing the results of a ray cast operation.
+!! * <br/><br/>
+!! * These objects are allocated from an object pool and can
+!! * be released back to that pool by calling its dispose method.
+!! */
+@:final class RayResult {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner):PR(ConvexRayResult) = null;
+
+    !!/**
+    !! * The normal of the surface at intersection.
+    !! */
+    property(normal, Vec2, {
+        DEBUG(pr(inner).disposed();)
+        return pr(inner).normal;
+    })
+
+    !!/**
+    !! * The distance to the intersection.
+    !! */
+    property(distance, Float, {
+        DEBUG(pr(inner).disposed();)
+        return pr(inner).toiDistance;
+    })
+
+    !!/**
+    !! * Whether this intersection is with the inner surface of an object.
+    !! */
+    property(inner, Bool, {
+        DEBUG(pr(inner).disposed();)
+        return pr(inner).inner;
+    })
+
+    !!/**
+    !! * The shape which was intersected.
+    !! */
+    property(shape, Shape, {
+        DEBUG(pr(inner).disposed();)
+        return pr(inner).shape;
+    })
+
+    !!/**
+    !! * @private
+    !! */
+    flibopts(0)
+    public function new() {
+        DEBUG(if(!PR(ConvexRayResult).internal) throw "Error: RayResult cannot be instantiated derp!";)
+    }
+
+    !!/**
+    !! * Release RayResult object to pool.
+    !! */
+    public inline function dispose() {
+        DEBUG(pr(inner).disposed();)
+        pr(inner).free();
+    }
+
+    !!/**
+    !! * @private
+    !! */
+    @:$keep public function toString() {
+        DEBUG(pr(inner).disposed();)
+        return "{ shape: "+shape+" distance: "+distance +" ?inner: "+inner+" }";
+    }
+}

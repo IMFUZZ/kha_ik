@@ -1,0 +1,66 @@
+package zpp_nape.util;
+$(import);
+
+// Haxe bug 1640 prevents using haxe generic here.
+// so caxe template used for now.
+// TODO
+//#if haxe3 @:generic #end class Array2<T> #if !haxe3 implements haxe.rtti.Generic #end {
+
+$(mixin global Array2(T) GenArray2(T) ZNPArray2_`T);
+$(expand global GenArray2(T) class Array2(T) {
+
+    public var list:TArray(T) = null;
+    public var width:Int = 0;
+    #if NAPE_ASSERT
+        public var height:Int = 0;
+    #end
+    #if flash10
+        public var total:Int = 0;
+    #end
+
+    public function new(width:Int,height:Int) {
+        this.width = width;
+        #if NAPE_ASSERT
+            this.height = height;
+        #end
+
+        #if flash10
+            total = width*height;
+            list = new flash.Vector<T>(total, true);
+        #else
+            list = new Array<T>();
+        #end
+    }
+
+    public function resize(width:Int, height:Int, def:T) {
+        #if flash10
+            var total = width*height;
+            if (total > this.total) {
+                for (i in 0...this.total) {
+                    list[i] = def;
+                }
+                list = new flash.Vector<T>(this.total = total, true);
+            }
+        #end
+        this.width = width;
+        #if NAPE_ASSERT
+            this.height = height;
+        #end
+
+        for (i in 0...width*height) {
+            list[i] = def;
+        }
+    }
+
+    flibmdel public inline function get(x:Int,y:Int) {
+        assert(x>=0 && x<width && y>=0 && y<height, "out of bounds Array");
+        return list[y*width+x];
+    }
+
+    flibmdel public inline function set(x:Int,y:Int,obj:T) {
+        assert(x>=0 && x<width && y>=0 && y<height, "out of bounds Array");
+        return list[y*width+x] = obj;
+    }
+}
+
+);

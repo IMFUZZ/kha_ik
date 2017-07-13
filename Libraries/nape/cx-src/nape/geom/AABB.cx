@@ -1,0 +1,222 @@
+package nape.geom;
+$(import);
+
+!!/**
+!! * Axis Aligned Bounding Box (AABB)
+!! * <br/><br/>
+!! * Note that in many cases of an AABB object being returned by a Nape function
+!! * the AABB object will be marked internally as an 'immutable' AABB. This will
+!! * always be documented and trying to mutate such an AABB will result in an
+!! * error being thrown.
+!! */
+@:final class AABB {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner):PR(AABB) = null;
+
+    !!/**
+    !! * Construct a new AABB.
+    !! * <br/><br/>
+    !! * As input width/height are permitted to be negative it is not guaranteed
+    !! * that the resultant AABB will have the same parameters as those
+    !! * specified as the AABB parameters are guaranteed to always have positive
+    !! * width/height, and for x/y to always be the top-left corner.
+    !! *
+    !! * @param x      The x coordinate of the top-left corner of the AABB.
+    !! *               (default 0)
+    !! * @param y      The y coordinate of the top-left corner of the AABB
+    !! *               (default 0)
+    !! * @param width  The width of the AABB. This value may be negative.
+    !! *               (default 0)
+    !! * @param height The height of the AABB. This value may be negative.
+    !! *               (default 0)
+    !! * @return       The newly constructed AABB object.
+    !! */
+    public function new(
+        x:Float = 0,
+        y:Float = 0,
+        width:Float = 0,
+        height:Float = 0
+    ) {
+        DEBUG(
+            if (isNaN(x) || isNaN(y)) {
+                throw "Error: AABB position cannot be NaN";
+            }
+            if (isNaN(width) || isNaN(height)) {
+                throw "Error: AABB dimensions cannot be NaN";
+            }
+        )
+
+        pr(inner) = PR(AABB).get(x, y, x + width, y + height);
+        pr(inner).outer = this;
+    }
+
+    !!/**
+    !! * Produce a copy of this AABB.
+    !! * <br/><br/>
+    !! * As would be expected, if you produce a copy of an 'immutable' AABB then
+    !! * the copy will be 'mutable'.
+    !! *
+    !! * @return The copy of this AABB.
+    !! */
+    keep public function copy() {
+        pr(inner).validate();
+        return pr(inner).copy().wrapper();
+    }
+
+    #if (flash9||openfl||nme)
+        !!
+        !!/**
+        !! * Construct an AABB from an AS3 Rectangle object.
+        !! * <br/><br/>
+        !! * This method is only available on <code>flash</code> and
+        !! * <code>openfl||nme</code> targets.
+        !! *
+        !! * @param rect The AS3 Rectangle to construct AABB from, this value
+        !! *             must not be null.
+        !! * @return The constructed AABB matching the input Rectangle.
+        !! * @throws # If the input rectangle is null.
+        !! */
+        keep public static function fromRect(rect:flash.geom.Rectangle):AABB {
+            DEBUG(
+                if (rect == null) {
+                    throw "Error: Cannot create AABB from null Rectangle";
+                }
+            )
+
+            return new AABB(rect.x, rect.y, rect.width, rect.height);
+        }
+
+        !!/**
+        !! * Create an AS3 Rectangle object from AABB.
+        !! * <br/><br/>
+        !! * This method is available only on <code>flash</code> and
+        !! * <code>openfl||nme</code> targets.
+        !! *
+        !! * @return The AS3 Rectangle object representing AABB.
+        !! */
+        keep public function toRect():flash.geom.Rectangle {
+            return new flash.geom.Rectangle(x, y, width, height);
+        }
+    #end
+
+    $(mixin comp(n, DESC)
+        !!/**
+        $doc($$*$$The n`imum bounds for the AABB.)
+        !! * <br/><br/>
+        $doc($$*$$Euivalent to the DESC corner.)
+        !! * <br/>
+        !! * This Vec2 is intrinsically linked to the AABB so that modifications
+        !! * to this object are reflected in changes to the AABB and vice-versa.
+        !! * <br/><br/>
+        !! * If the AABB is immutable, then this Vec2 will also be immutable.
+        !! * <br/><br/>
+        !! * This value can be set with the = operator, equivalent to performing
+        $doc($$*$$<code>aabb.n.set(value)</code>.)
+        !! * @default (0, 0)
+        !! */
+        property(n, Vec2, {
+            return pr(inner).get`n();
+        },{
+            Disposed(n,Vec2);
+
+            DEBUG(
+                if (pr(inner)._immutable) {
+                    throw "Error: AABB is immutable";
+                }
+                if (n == null) {
+                    throw "Error: Cannot assign null to AABB::"+$str(n);
+                }
+                if (isNaN(x) || isNaN(y)) {
+                    throw "Error: AABB::"+$str(n)+" components cannot be NaN";
+                }
+                if ($str(n) == "min") {
+                    if(n.x > max.x) throw "Error: Assignment would cause negative width";
+                    if(n.y > max.y) throw "Error: Assignment would cause negative height";
+                }else {
+                    if(n.x < min.x) throw "Error: Assignment would cause negative width";
+                    if(n.y < min.y) throw "Error: Assignment would cause negative height";
+                }
+            )
+
+            this.n.set(n);
+        })
+    );
+    comp(min, top-left)
+    comp(max, bottom-right)
+
+    $(mixin coord(n)
+        !!/**
+        $doc($$*$$The n coordinate of the AABB's top-left corner.)
+        !! * <br/><br/>
+        $doc($$*$$Equivalent to accessing/mutating min.n.)
+        !! * @default 0
+        !! */
+        property(n,Float,{
+            pr(inner).validate();
+            return pr(inner).min`n;
+        },{
+            DEBUG(
+                if (pr(inner)._immutable) {
+                    throw "Error: AABB is immutable";
+                }
+            )
+
+            if (this.n != n) {
+                DEBUG(
+                    if (isNaN(n)) throw "Error: AABB::"+$str(n)+" cannot be NaN";
+                )
+
+                pr(inner).max`n += n - pr(inner).min`n;
+                pr(inner).min`n = n;
+                pr(inner).invalidate();
+            }
+        })
+    );
+    coord(x)
+    coord(y)
+
+    $(mixin dim(N,n)
+        !!/**
+        $doc($$*$$N of AABB.)
+        !! * <br/><br/>
+        !! * This value is and must always be positive.
+        !! * @default 0
+        !! */
+        property(N,Float,{
+            pr(inner).validate();
+            return pr(inner).N();
+        },{
+            DEBUG(
+                if (pr(inner)._immutable) {
+                    throw "Error: AABB is immutable";
+                }
+            )
+
+            if (this.N != N) {
+                DEBUG(
+                    if (isNaN(N)) {
+                        throw "Error: AABB::"+$str(N)+" cannot be NaN";
+                    }
+                    if (N<0) {
+                        throw "Error: AABB::"+$str(N)+" ("+N+") must be >= 0";
+                    }
+                )
+
+                pr(inner).max`n = this.n+N;
+                pr(inner).invalidate();
+            }
+        })
+    );
+    dim(width, x)
+    dim(height,y)
+
+    !!/**
+    !! * @private
+    !! */
+    @:$keep public function toString() {
+        pr(inner).validate();
+        return pr(inner).toString();
+    }
+}

@@ -1,0 +1,77 @@
+package zpp_nape.callbacks;
+$(import);
+
+GENID(CbType)
+class PR(CbType) {
+    public var outer:CbType = null;
+
+    PrivateUserData
+
+    // Unique id for CbType for total ordering.
+    public var id:Int = 0;
+
+    // Set of cbsets (across all Spaces) associated with CbType.
+    public var cbsets:List(PR(CbSet)) = null;
+
+    // Total order for CbType's
+    public inline static function setlt(a:PR(CbType),b:PR(CbType)):Bool {
+        return a.id < b.id;
+    }
+
+    // Lists of 'active' interactors/constraints using CbType.
+    public var interactors:List(PR(Interactor)); public var wrap_interactors:InteractorList;
+    public var constraints:List(PR(Constraint)); public var wrap_constraints:ConstraintList;
+
+    flibmdel public inline function addConstraint(con :PR(Constraint)) { constraints.add(con); }
+    flibmdel public inline function addInteractor(intx:PR(Interactor)) { interactors.add(intx); }
+
+    flibmdel public inline function remConstraint(con :PR(Constraint)) { constraints.remove(con); }
+    flibmdel public inline function remInteractor(intx:PR(Interactor)) { interactors.remove(intx); }
+
+    //
+    // List of sorted active listeners of all internal types.
+    //
+    $(mixin listlist(T, n, r)
+        public var n:List(PR(T)) = null;
+        flibmdel public inline function add`r(x:PR(T)):Void {
+            assert(!n.has(x), "listener already in list");
+            // List is sorted.
+            Insert(x, n, PR(Listener).setlt);
+            invalidate`r();
+        }
+        flibmdel public inline function remove`r(x:PR(T)):Void {
+            n.remove(x);
+            invalidate`r();
+        }
+        flibmdel public inline function invalidate`r():Void {
+            Iter(cb, cbsets, cb.invalidate_`n());
+        }
+        initlist(T, n)
+    );
+
+    // Set of active interaction/pre listeners using CbType
+    listlist(InteractionListener,listeners,int)
+
+    // Set of active body listeners using the CbType
+    listlist(BodyListener,bodylisteners,body)
+
+    // Set of active constraint listeners using the CbType
+    listlist(ConstraintListener,conlisteners,constraint)
+
+    public static var ANY_SHAPE      = new CbType();
+    public static var ANY_BODY       = new CbType();
+    public static var ANY_COMPOUND   = new CbType();
+    public static var ANY_CONSTRAINT = new CbType();
+
+    public function new() {
+        id = ID(CbType);
+
+        $(expand object initlist(T,n)
+            n = new List(PR(T))();
+        )
+        constraints = new List(PR(Constraint))();
+        interactors = new List(PR(Interactor))();
+
+        cbsets = new List(PR(CbSet))();
+    }
+}

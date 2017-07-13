@@ -1,0 +1,28 @@
+#!/bin/bash
+
+function count() {
+
+	FILES=`find $2 -type f -name "*."$1`
+	COUNT=0
+
+	for file in $FILES
+	do
+	    line=`wc -l $file | grep -o '^[ \\t]*[0-9][0-9]*'`
+	    COUNT=$((COUNT+line))
+	done
+
+	echo $3" source = "$COUNT" lines"
+
+}
+
+if [ -n "$1" ]; then
+	count cx $1 ".cx"
+	count hx $1 ".hx"
+else
+	count cx cx-src "nape .cx"
+	count hx src "nape .hx"
+	count hx demo "demo .hx"
+	count cx doc-gen "doc-gen .cx"
+	count hx doc-gen "doc-gen .hx"
+fi
+

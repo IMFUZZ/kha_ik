@@ -1,0 +1,159 @@
+package zpp_nape.util;
+$(import);
+
+$(define global class Queue(T) {
+    public var nodes:QueueNode(T) = null;
+
+    public function new() {
+        nodes = new QueueNode(T)(null);
+    }
+
+    property(length,Int,nodes.length)
+
+    public function push    (obj:T) { nodes.push    (new QueueNode(T)(obj)); }
+    public function push_rev(obj:T) { nodes.push_rev(new QueueNode(T)(obj)); }
+
+    public function pop    () { return nodes.pop    ().elt; }
+    public function pop_rev() { return nodes.pop_rev().elt; }
+
+    public function empty() { return nodes.empty(); }
+
+    public function     at(i) { return nodes.    at(i).elt; }
+    public function rev_at(i) { return nodes.rev_at(i).elt; }
+
+    @:$keep public function toString() {
+        var ret = "top -> ";
+        for(i in 0...length) {
+            if(i!=0) ret += ", ";
+            ret += at(i).toString();
+        }
+        ret += " <- bot";
+        return ret;
+    }
+});
+
+$(mixin QueueNodeRec(T) QueueNode(T));
+$(define global class QueueNode(T) {
+    QueueMix(QueueNodeRec(T))
+    public var elt:T = null;
+
+    public function new(elt:T) this.elt = elt
+});
+
+$(mixin global QueueMix(T)
+    public var next:T = null;
+    QueueMixNoNext(T)
+);
+
+$(mixin global QueueMixNoNext(T)
+    public var prev:T =null;
+    public var length:Int = 0;
+    /*
+        for the actual list, next = front, prev = back
+    */
+
+    //push to back of queue
+    public function push(obj:T) {
+        assert(obj!=null,"push null?");
+        if(prev!=null) prev.next = obj;
+        else next = obj;
+        obj.prev = prev;
+        obj.next = null;
+        prev = obj;
+        length++;
+    }
+
+    //push to front of queue
+    public function push_rev(obj:T) {
+        assert(obj!=null,"push_rev null?");
+        if(next!=null) next.prev = obj;
+        else prev = obj;
+        obj.next = next;
+        obj.prev = null;
+        next = obj;
+        length++;
+    }
+
+    //pop from front of queue
+    public function pop():T {
+        assert(next!=null,"empty queue");
+        var ret = next;
+        next = ret.next;
+        if(next==null) prev = null;
+        else next.prev = null;
+        length--;
+        return ret;
+    }
+
+    //pop from back of queue
+    public function pop_rev():T {
+        assert(prev!=null,"empty queue");
+        var ret = prev;
+        prev = ret.prev;
+        if(prev==null) next = null;
+        else prev.next = null;
+        length--;
+        return ret;
+    }
+
+    public function empty() { return next==null; }
+
+    public function clear() { while(!empty()) pop(); }
+
+    public function splice(o:T) {
+        var ret = o.next;
+        //
+        if(o.prev==null) {
+            next = o.next;
+            if(next!=null) next.prev = null;
+            else prev = null;
+        }else {
+            o.prev.next = o.next;
+            if(o.next!=null) o.next.prev = o.prev;
+            else prev = o.prev;
+        }
+        //
+        length--;
+        return ret;
+    }
+
+    public function rotateL() {
+        push(pop());
+    }
+    public function rotateR() {
+        push_rev(pop_rev());
+    }
+
+    public function cycleNext(o:T) {
+        assert(o!=null,"cyclNext null?");
+        if(o.next==null) return next;
+        else return o.next;
+    }
+    public function cyclePrev(o:T) {
+        assert(o!=null,"cyclPrev null?");
+        if(o.prev==null) return prev;
+        else return o.prev;
+    }
+
+    public function at(i:Int) {
+        assert(i>=0 && i<length, "at index bounds");
+        var ret = next;
+        while(i--!=0) ret = ret.next;
+        return ret;
+    }
+    public function rev_at(i:Int) {
+        assert(i>=0 && i<length, "rev_at index bounds");
+        var ret = prev;
+        while(i--!=0) ret = ret.prev;
+        return ret;
+    }
+);
+
+$(mixin global IterQueue(i,queue,block) {
+    var cx_ite = queue.next;
+    while(cx_ite!=null) {
+        var i = cx_ite;
+        block;
+        cx_ite = cx_ite.next;
+    }
+});

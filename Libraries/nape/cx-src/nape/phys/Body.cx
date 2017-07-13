@@ -1,0 +1,1449 @@
+package nape.phys;
+$(import);
+
+!!/**
+!! * Class representing a physics Rigid Body.
+!! */
+@:final class Body extends Interactor {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner):PR(Body) = null;
+
+    !!/**
+    !! * Set to disable debug drawing/
+    !! * <br/><br/>
+    !! * When true, this Body will not be drawn during debug draw operations
+    !! * unless specifically given as argument to Debug draw() method.
+    !! * @default true
+    !! */
+    public var debugDraw:Bool = true;
+
+    !!/**
+    !! * Type of body.
+    !! * <br/><br/>
+    !! * This value can be changed even if Body is inside of a Space.
+    !! */
+    property(type,BodyType, {
+        return PR(Body).types[pr(inner).type];
+    },{
+        pr(inner).immutable_midstep("Body::type");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        if(this.type!=type) {
+            DEBUG(if(type==null) throw "Error: Cannot use null BodyType";)
+
+            var ntype = type==BodyType.DYNAMIC   ? Flag(BodyType,DYNAMIC)
+                      : type==BodyType.KINEMATIC ? Flag(BodyType,KINEMATIC)
+                      :                            Flag(BodyType,STATIC);
+
+            if(ntype==Flag(BodyType,STATIC) && pr(inner).space!=null) {
+                vec_set(pr(inner).vel,0,0);
+                pr(inner).angvel = 0;
+            }
+            pr(inner).invalidate_type();
+
+            if(pr(inner).space!=null)
+                pr(inner).space.transmitType(pr(inner),ntype);
+            else pr(inner).type = ntype;
+        }
+    })
+
+    !!/**
+    !! * Mark object for continuous collisions against other dynamic Bodies
+    !! * <br/><br/>
+    !! * If true, then this Body will undergo continuous collisions with other
+    !! * dynamic Bodies. This flag has no effect for non-dynamic Bodies.
+    !! * <br/><br/>
+    !! * This flag should only be set for very fast, small moving dynamic bodies,
+    !! * and due to the way continuous collisions are resolved it is not wise to
+    !! * enable this for a large group of bodies that interact together as it
+    !! * will lead to visual stalling.
+    !! * <br/>
+    !! * Bullets also do not play well when existing in a group with respect to
+    !! * continuous collisions against kinematic objects and may cause
+    !! * tunnelling against the kinematic.
+    !! * @default false
+    !! */
+    property(isBullet, Bool, {
+        return pr(inner).bulletEnabled;
+    }, {
+        pr(inner).bulletEnabled = isBullet;
+    })
+
+    !!/**
+    !! * Declare object should never be collided continuously
+    !! * <br/><br/>
+    !! * When performing continuous collisions, Nape will check both Bodies to see
+    !! * if either has opted-out of CCD. If either Body has this flag true, then
+    !! * no CCD will be performed for that pair.
+    !! * @default false
+    !! */
+    property(disableCCD, Bool, {
+        return pr(inner).disableCCD;
+    }, {
+        pr(inner).disableCCD = disableCCD;
+    })
+
+    !!/**
+    !! * Integrate body forward in time, taking only velocities into account.
+    !! *
+    !! * @param deltaTime The time to integrate body by. This value may be negative to
+    !! *                  integrate back in time.
+    !! * @return A refernce to 'this' Body
+    !! */
+    keep public function integrate(deltaTime:Float) {
+        DEBUG(if (isNaN(deltaTime)) throw "Cannot integrate by NaN time";)
+        pr(inner).immutable_midstep("Body::space");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        if (deltaTime == 0) return this;
+
+        var cur = this.pr(inner);
+        cur.sweepTime = 0;
+        cur.sweep_angvel = cur.angvel;
+        cur.sweepIntegrate(deltaTime);
+        cur.invalidate_pos();
+        cur.invalidate_rot();
+        cur.sweepTime = 0;
+        return this;
+    }
+
+    !!/**
+    !! * Fast equivalent to <code>body.type == BodyType.STATIC</code>
+    !! * @return True if body is Static.
+    !! */
+    keep public inline function isStatic() {
+        return pr(inner).isStatic();
+    }
+    !!/**
+    !! * Fast equivalent to <code>body.type == BodyType.DYNAMIC</code>
+    !! * @return True if body is Dynamic.
+    !! */
+    keep public inline function isDynamic() {
+        return pr(inner).isDynamic();
+    }
+    !!/**
+    !! * Fast equivalent to <code>body.type == BodyType.KINEMATIC</code>
+    !! * @return True if body is Kinematic.
+    !! */
+    keep public inline function isKinematic() {
+        return pr(inner).isKinematic();
+    }
+
+    !!/**
+    !! * List of shapes owned by Body.
+    !! * <br/><br/>
+    !! * Appending a Shape to this list is equivalent to <code>shape.body = this</code>
+    !! *
+    !! * @default []
+    !! */
+    property(shapes,ShapeList, {
+        return pr(inner).wrap_shapes;
+    })
+
+    !!/**
+    !! * Compound this Body belongs to.
+    !! * <br/><br/>
+    !! * If this Body belongs to a Compound, then the Compound 'owns' this Body and
+    !! * it is the Compound which would be added/removed from a Space rather than
+    !! * this Body.
+    !! *
+    !! * @default null
+    !! */
+    property(compound,Null<Compound>,{
+        return if(pr(inner).compound==null) null else pr(inner).compound.outer;
+    },{
+        if(this.compound!=compound) {
+            if(this.compound!=null) this.compound.bodies.remove(this);
+            if(compound!=null) compound.bodies.add(this);
+        }
+    })
+
+    !!/**
+    !! * Space this Body is assigned to.
+    !! * <br/><br/>
+    !! * When this Body is part of a Compound, this value is immutable.
+    !! * <br/>
+    !! * When a Body is part of a Compound it is owned by that Compound and it
+    !! * is the Compound that is added/removed from a Space.
+    !! */
+    property(space,Null<Space>,{
+        return if(pr(inner).space==null) null else pr(inner).space.outer;
+    },{
+        DEBUG(if(pr(inner).compound!=null) throw "Error: Cannot set the space of a Body belonging to a Compound, only the root Compound space can be set";)
+        pr(inner).immutable_midstep("Body::space");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        if(this.space!=space) {
+            //prevent wake callback on adding to space
+            if(this.space!=null)
+                pr(inner).component.woken = false;
+
+            if(this.space!=null) this.space.bodies.remove(this);
+            if(space!=null) space.bodies.add(this);
+        }
+    })
+
+    !!/**
+    !! * Set of active arbiters related to this Body.
+    !! * <br/><br/>
+    !! * This list is immutable.
+    !! */
+    property(arbiters,ArbiterList,{
+        if(pr(inner).wrap_arbiters==null)
+            pr(inner).wrap_arbiters = PR(ArbiterList).get(pr(inner).arbiters,true);
+        return pr(inner).wrap_arbiters;
+    })
+
+    !!/**
+    !! * Whether this body is sleeping.
+    !! * <br/><br/>
+    !! * This value is immutable, In Nape you do not ever need to manually wake up a Body.
+    !! * It will always be done automatically without error.
+    !! * <br/><br/>
+    !! * To manually put a Body to sleep is against the very nature of Nape API
+    !! * and so is excluded from the core of Nape. If you really want to do this
+    !! * then you should make use of the nape-hacks module.
+    !! */
+    property(isSleeping,Bool,{
+        DEBUG(if(pr(inner).space==null)
+            throw "Error: isSleeping makes no sense if the object is not contained within a Space";
+        )
+        return pr(inner).component.sleeping;
+    })
+
+    !!/**
+    !! * Set of constraints using this Body.
+    !! * <br/><br/>
+    !! * This list contains those constraints that are inside of a Space only.
+    !! * <br/><br/>
+    !! * This list is immutable.
+    !! */
+    property(constraints,ConstraintList,{
+        if(pr(inner).wrap_constraints==null)
+            pr(inner).wrap_constraints = PR(ConstraintList).get(pr(inner).constraints,true);
+        return pr(inner).wrap_constraints;
+    })
+
+    !!/**
+    !! * Construct a new Body.
+    !! * <br/><br/>
+    !! * @param type The type of Body to create. (default DYNAMIC)
+    !! * @param position The initial position for object. (default &#40;0,0&#41;)
+    !! * @return The newly constructed Body.
+    !! * @throws # If position is non-null, and has been disposed of.
+    !! */
+    flibopts(2)
+    public function new(type:BodyType=null,position:Vec2=null) {
+        DEBUG(Interactor.pr(internalAlloc) = true; super(); Interactor.pr(internalAlloc) = false;)
+        RELEASE(super();)
+
+        pr(inner) = new PR(Body)();
+        pr(inner).outer = this;
+        pr(inner).outer_i = this;
+        pr(inner_i) = pr(inner);
+
+        if(position!=null) {
+            Disposed(position,Vec2);
+            vec_set(pr(inner).pos,position.);
+        }
+        else vec_set(pr(inner).pos,0,0);
+        this.type = type == null ? BodyType.DYNAMIC : type;
+        if(position!=null) WEAK(position);
+
+        //implicit ANY type.
+        pr(inner_i).insert_cbtype(CbType.ANY_BODY.pr(inner));
+    }
+
+    !!/**
+    !! * Construct an exact copy of this Body.
+    !! * <br/><br/>
+    !! * All properties will be exactly copied, with Shapes also
+    !! * being copied with the copied Body's and Shape's userData
+    !! * objects being assigned the same fields as the existing ones with
+    !! * values copied over by reference for object types.
+    !! *
+    !! * @return A copy of this Body.
+    !! */
+    keep public function copy() {
+        DEBUG(if(pr(inner).world) throw "Error: Space::world cannot be copied";)
+        return pr(inner).copy();
+    }
+
+    $(mixin vecprop(n,wrap,setup)
+        property(n,Vec2,{
+            if(pr(inner).wrap==null) pr(inner).setup();
+            return pr(inner).wrap;
+        },{
+            Disposed(n,Vec2);
+            DEBUG(if(n==null) throw "Error: Body::"+$str(n)+" cannot be null";)
+            this.n.set(n);
+        })
+    );
+
+    !!/**
+    !! * Position of Body's origin in px.
+    !! * <br/><br/>
+    !! * This value can be set and is equivalent to: <code>this.position.set(value)</code>
+    !! * <br/><br/>
+    !! * Attempting to set this value on a static Body that is in a Space will result
+    !! * in a debug build error.
+    !! * <br/><br/>
+    !! * Please note that for kinematic objects, setting this value is equiavalent
+    !! * to 'teleporting' the object, and for normal movement you should be using
+    !! * the kinematic body's velocity.
+    !! *
+    !! * @default (0,0)
+    !! */
+    vecprop(position, wrap_pos, setupPosition)
+
+    !!/**
+    !! * Linear velocity of Body's origin in px/s.
+    !! * <br/><br/>
+    !! * This value can be set and is equivalent to: <code>this.velocity.set(value)</code>
+    !! * <br/><br/>
+    !! * A static body cannot have its velocity set.
+    !! *
+    !! * @default (0,0)
+    !! */
+    vecprop(velocity, wrap_vel, setupVelocity)
+
+    !!/**
+    !! * Set velocities to achieve desired position at end of time step.
+    !! * <br/><br/>
+    !! * This function is a utility to help with animating kinematic bodies.
+    !! * Kinematic bodies should be moved through velocity, but it is often
+    !! * easier to think in terms of position.
+    !! * <br/><br/>
+    !! * This method will set linear and angular velocities so that the target
+    !! * position/rotation is achieved at end of time step.
+    !! *
+    !! * @param targetPosition The target position for Body.
+    !! * @param targetRotation The target rotation for Body.
+    !! * @param deltaTime The time step for next call to space.step().
+    !! * @throws # If targetPosition is null or disposed of.
+    !! * @returns A reference to 'this' Body.
+    !! */
+    keep public function setVelocityFromTarget(targetPosition:Vec2, targetRotation:Float, deltaTime:Float)
+    {
+        Disposed(targetPosition, Vec2);
+        DEBUG(if (targetPosition == null)
+                  throw "Cannot set velocity for null target position";
+              if (deltaTime == 0)
+                  throw "deltaTime cannot be 0 for setVelocityFromTarget";
+        )
+        var idt = (1 / deltaTime);
+        this.velocity.set(targetPosition.sub(this.position, true).muleq(idt));
+        this.angularVel = (targetRotation - this.rotation) * idt;
+        WEAK(targetPosition);
+        return this;
+    }
+
+    !!/**
+    !! * Additional kinematic velocity of Body in px/s.
+    !! * <br/><br/>
+    !! * A bodies 'kinematic' velocity is an added velocity bias used in all physics
+    !! * computations but that will not effect how the Body moves directly.
+    !! * <br/><br/>
+    !! * Even a static body can be given a kinematic velocity, and can be used for
+    !! * such things as giving a body of water a fluid-velocity for fluid drag
+    !! * computations.
+    !! *
+    !! * @default (0,0)
+    !! */
+    vecprop(kinematicVel, wrap_kinvel, setupkinvel)
+
+    !!/**
+    !! * Additional surface velocity for Body in px/s.
+    !! * <br/><br/>
+    !! * A bodies 'surface' velocity is an added velocity bias that is rotated to match
+    !! * the angle of the contact surface used in contact physics and will not
+    !! * effect how the Body moves directly.
+    !! * <br/><br/>
+    !! * Even a static body can be given a surface velocity, and can be used for
+    !! * such things as conveyor belts (By setting the x-component of surfaceVel).
+    !! *
+    !! * @default (0,0)
+    !! */
+    vecprop(surfaceVel, wrap_svel, setupsvel)
+
+    !!/**
+    !! * Accumulated force acting on body in px.kg/s/s
+    !! * <br/><br/>
+    !! * This value is not used internally for any physics computations.
+    !! * <br/><br/>
+    !! * You may set this property only on dynamic bodies.
+    !! *
+    !! * @default (0,0)
+    !! */
+    vecprop(force, wrap_force, setupForce)
+
+    !!/**
+    !! * This property represents the velocity seen by constraint physics.
+    !! * <br/><br/>
+    !! * You should not need to use this property unless writing your own
+    !! * constraints using the UserConstraint API.
+    !! */
+    property(constraintVelocity,Vec3,{
+        if(pr(inner).wrapcvel==null) pr(inner).setup_cvel();
+        return pr(inner).wrapcvel;
+    })
+
+    !!/**
+    !! * Rotation of Body in clockwise rad.
+    !! * <br/><br/>
+    !! * Attempting to set this value on a static Body that is in a Space will result
+    !! * in a debug build error.
+    !! * <br/><br/>
+    !! * Please note that for kinematic objects, setting this value is equiavalent
+    !! * to 'teleporting' the object, and for normal movement you should be using
+    !! * the kinematic body's angularVel.
+    !! *
+    !! * @default 0
+    !! */
+    property(rotation,Float, {
+        return pr(inner).rot;
+    }, {
+        pr(inner).immutable_midstep("Body::rotation");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        DEBUG(if(isStatic() && pr(inner).space!=null)
+            throw "Error: Static objects cannot be rotated once inside a Space";
+        )
+        if(this.rotation!=rotation) {
+            DEBUG(if(isNaN(rotation)) throw "Error: Body::rotation cannot be NaN";)
+            pr(inner).rot = rotation;
+            pr(inner).invalidate_rot();
+            pr(inner).wake();
+        }
+    })
+
+    !!/**
+    !! * Angular velocity of Body in clockwise rad/s
+    !! * <br/><br/>
+    !! * A static body cannot have its angular velocity set.
+    !! *
+    !! * @default 0
+    !! */
+    property(angularVel,Float, {
+        return pr(inner).angvel;
+    }, {
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        if(this.angularVel!=angularVel) {
+            DEBUG(if(isNaN(angularVel)) throw "Error: Body::angularVel cannot be NaN";)
+            DEBUG(if(pr(inner).isStatic())
+                throw "Error: A static object cannot be given a velocity";
+            )
+            pr(inner).angvel = angularVel;
+            pr(inner).invalidate_wake();
+        }
+    })
+
+    !!/**
+    !! * Additional kinematic angular velocity of Body in rad/s.
+    !! * <br/><br/>
+    !! * A bodies 'kinematic' velocity is an added velocity bias used in all physics
+    !! * computations but that will not effect how the Body moves directly.
+    !! * <br/><br/>
+    !! * Even a static body can be given a kinematic velocity, and can be used for
+    !! * such things as giving a body of water a fluid-velocity for fluid drag
+    !! * computations.
+    !! *
+    !! * @default 0
+    !! */
+    property(kinAngVel,Float, {
+        return pr(inner).kinangvel;
+    }, {
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        if(this.kinAngVel!=kinAngVel) {
+            DEBUG(if(isNaN(kinAngVel)) throw "Error: Body::kinAngVel cannot be NaN";)
+            pr(inner).kinangvel = kinAngVel;
+            pr(inner).invalidate_wake();
+        }
+    })
+
+    !!/**
+    !! * Accumulated torque acting on body in px.px.kg/s/s
+    !! * <br/><br/>
+    !! * This value is not used internally for any physics computations.
+    !! * <br/><br/>
+    !! * You may set this property only on dynamic bodies.
+    !! *
+    !! * @default 0
+    !! */
+    property(torque,Float, {
+        return pr(inner).torque;
+    }, {
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        DEBUG(
+            if(!isDynamic()) throw "Error: Non-dynamic body cannot have torque applied.";
+        )
+        DEBUG(if(isNaN(torque)) throw "Error: Body::torque cannot be NaN";)
+        if(this.torque!=torque) {
+            pr(inner).torque = torque;
+            pr(inner).invalidate_wake();
+        }
+    })
+
+    !!/**
+    !! * Bounding box of Body in world space.
+    !! * <br/><br/>
+    !! * This value can be accessed even if there are no Shapes in the Body, but
+    !! * attempting to query its values whilst there are no Shapes will result
+    !! * in a debug build error.
+    !! * <br/><br/>
+    !! * This AABB is immutable.
+    !! */
+    property(bounds,AABB,{
+        DEBUG(if(pr(inner).world) throw "Error: Space::world has no bounds";)
+        return pr(inner).aabb.wrapper();
+    })
+
+    $(mixin allowprop(n,flag,prop)
+        property(n,Bool, {
+            return !pr(inner).flag;
+        }, {
+            pr(inner).immutable_midstep("Body::"+n);
+            if(this.n != n) {
+                pr(inner).flag = !n;
+                pr(inner).invalidate_`prop();
+            }
+        })
+    );
+
+    !!/**
+    !! * Whether dynamic Body is permitted to be moved by physics linearly.
+    !! * <br/><br/>
+    !! * When this field is false, no physics will be able to cause a change in the
+    !! * bodies linear velocity (It can still move, but only if you tell it to like
+    !! * a kinematic body).
+    !! *
+    !! * @default true
+    !! */
+    allowprop(allowMovement, nomove, mass)
+
+    !!/**
+    !! * Whether dynamic Body is permitted to be rotated by physics.
+    !! * <br/><br/>
+    !! * When this field is false, no physics will be able to cause a change in the
+    !! * bodies angular velocity (It can still rotate, but only if you tell it to like
+    !! * a kinematic body).
+    !! *
+    !! * @default true
+    !! */
+    allowprop(allowRotation, norotate, inertia)
+
+    !!/**
+    !! * Method of mass computation for Body.
+    !! * <br/><br/>
+    !! * This value will be set implicitly to FIXED when mass property is set.
+    !! * <br/>Setting back to DEFAULT will then set mass implicitly back to the default
+    !! * computed mass.
+    !! *
+    !! * @default MassMode.DEFAULT
+    !! */
+    property(massMode,MassMode,{
+        return [MassMode.DEFAULT,MassMode.FIXED][pr(inner).massMode];
+    },{
+        pr(inner).immutable_midstep("Body::massMode");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        DEBUG(if(massMode==null)
+            throw "Error: cannot use null massMode";
+        )
+        pr(inner).massMode = massMode == MassMode.DEFAULT ? Flag(MassMode,DEFAULT) : Flag(MassMode,FIXED);
+        pr(inner).invalidate_mass();
+    })
+
+    !!/**
+    !! * Mass to be used for a Body in User built constraints.
+    !! * <br/><br/>
+    !! * This value is given as the inverse mass of the Body taking into account
+    !! * Body type (Static and Kinematic Bodies will have constraintMass of 0)
+    !! * as well as properties like allowMovement.
+    !! */
+    property(constraintMass,Float,{
+        if(!pr(inner).world) pr(inner).validate_mass();
+        return pr(inner).smass;
+    })
+
+    !!/**
+    !! * Mass of the Body.
+    !! * <br/><br/>
+    !! * This value is computed by default based on the Body's Shape's areas and
+    !! * Material densities.
+    !! * <br/>
+    !! * When massMode is DEFAULT, accessing this value for an empty Body will thus
+    !! * give an error as the value is undefined.
+    !! * <br/><br/>
+    !! * Setting this value will permit you to give a fixed mass to the Body
+    !! * implicitly changing the massMode to MassMode.FIXED
+    !! */
+    property(mass,Float,{
+        DEBUG(if(pr(inner).world) throw "Error: Space::world has no mass";)
+        pr(inner).validate_mass();
+        DEBUG(if(pr(inner).massMode== Flag(MassMode,DEFAULT) && pr(inner).shapes.empty())
+            throw "Error: Given current mass mode, Body::mass only makes sense if it contains shapes";
+        )
+        return pr(inner).cmass;
+    },{
+        pr(inner).immutable_midstep("Body::mass");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        DEBUG(
+            if(isNaN(mass)) throw "Error: Mass cannot be NaN";
+            if(mass<=0) throw "Error: Mass must be strictly positive";
+            if(mass>=PR(Const).POSINF()) throw "Error: Mass cannot be infinite, use allowMovement = false instead";
+        )
+        pr(inner).massMode = Flag(MassMode,FIXED);
+        pr(inner).cmass = mass;
+        pr(inner).invalidate_mass();
+    })
+
+    !!/**
+    !! * Method of computing mass as seen by gravity.
+    !! * <br/><br/>
+    !! * This value will be implicitly set by modifying gravMass or gravMassScale properties.
+    !! *
+    !! * @default GravMassMode.DEFAULT
+    !! */
+    property(gravMassMode,GravMassMode,{
+        return [GravMassMode.DEFAULT,GravMassMode.FIXED,GravMassMode.SCALED][pr(inner).massMode];
+    },{
+        pr(inner).immutable_midstep("Body::gravMassMode");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        DEBUG(if(gravMassMode==null) throw "Error: Cannot use null gravMassMode";)
+        pr(inner).gravMassMode = gravMassMode == GravMassMode.SCALED ? Flag(GravMassMode,SCALED)
+                               : gravMassMode == GravMassMode.DEFAULT ? Flag(GravMassMode,DEFAULT)
+                               : Flag(GravMassMode,FIXED);
+        pr(inner).invalidate_gravMass();
+    })
+
+    !!/**
+    !! * Mass used in gravity computations in a Space.
+    !! * <br/><br/>
+    !! * Setting this value will implicitly change the gravMassMode to FIXED.
+    !! * <br/>
+    !! * Set to 0 to disable gravity for this Body.
+    !! */
+    property(gravMass,Float,{
+        DEBUG(if(pr(inner).world) throw "Error: Space::world has no gravMass";)
+        pr(inner).validate_gravMass();
+        DEBUG(if(pr(inner).shapes.empty()) {
+            if(pr(inner).massMode == Flag(MassMode,DEFAULT) &&
+            pr(inner).gravMassMode != Flag(GravMassMode,FIXED))
+                throw "Error: Given current mass/gravMass modes; Body::gravMass only makes sense if it contains Shapes";
+        })
+        return pr(inner).gravMass;
+    },{
+        pr(inner).immutable_midstep("Body::gravMass");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        DEBUG(if(isNaN(gravMass)) throw "Error: gravMass cannot be NaN";)
+        pr(inner).gravMassMode = Flag(GravMassMode,FIXED);
+        pr(inner).gravMass = gravMass;
+        pr(inner).invalidate_gravMass();
+    })
+
+    !!/**
+    !! * Mass scale used in computation of gravity for Body in Space.
+    !! * <br/><br/>
+    !! * Setting this value will implicitly change the gravMassMode to SCALED.
+    !! * <br/>
+    !! * When set, the gravMass of Body will be computed as this scaling factor
+    !! * multiplied with the Body's mass.
+    !! */
+    property(gravMassScale,Float,{
+        pr(inner).validate_gravMassScale();
+        DEBUG(if(pr(inner).shapes.empty()) {
+            if(pr(inner).massMode == Flag(MassMode,DEFAULT) &&
+            pr(inner).gravMassMode != Flag(GravMassMode,SCALED))
+                throw "Error: Given current mass/gravMass modes; Body::gravMassScale only makes sense if it contains Shapes";
+        })
+        return pr(inner).gravMassScale;
+    },{
+        pr(inner).immutable_midstep("Body::gravMassScale");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        DEBUG(if(isNaN(gravMassScale)) throw "Error: gravMassScale cannot be NaN";)
+        pr(inner).gravMassMode = Flag(GravMassMode,SCALED);
+        pr(inner).gravMassScale = gravMassScale;
+        pr(inner).invalidate_gravMassScale();
+    })
+
+    !!/**
+    !! * Method of computing Body moment of inertia.
+    !! * <br/><br/>
+    !! * This value will be set implicitly by modifying Body inertia property.
+    !! *
+    !! * @default InertiaMode.DEFAULT
+    !! */
+    property(inertiaMode,InertiaMode,{
+        return [InertiaMode.DEFAULT,InertiaMode.FIXED][pr(inner).inertiaMode];
+    },{
+        pr(inner).immutable_midstep("Body::inertiaMode");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        DEBUG(if(inertiaMode==null)
+            throw "Error: Cannot use null InertiaMode";
+        )
+        pr(inner).inertiaMode = inertiaMode == InertiaMode.FIXED ? Flag(InertiaMode,FIXED) : Flag(InertiaMode,DEFAULT);
+        pr(inner).invalidate_inertia();
+    })
+
+    !!/**
+    !! * Moment of inertia to be used in user defined Constraints.
+    !! * <br/><br/>
+    !! * This value is equal to the inverse inertia of the Body taking into account
+    !! * Body type (Static and Kinematic bodies will have constraintInertia of 0).
+    !! * As well as properties like allowRotation.
+    !! */
+    property(constraintInertia,Float,{
+        if(!pr(inner).world) pr(inner).validate_inertia();
+        return pr(inner).sinertia;
+    })
+
+    !!/**
+    !! * Moment of inertia of this Body.
+    !! * <br/><br/>
+    !! * Setting this value will implicitly change the inertiaMode to FIXED.
+    !! */
+    property(inertia,Float,{
+        DEBUG(if(pr(inner).world) throw "Error: Space::world has no inertia";)
+        pr(inner).validate_inertia();
+        DEBUG(if(pr(inner).inertiaMode == Flag(InertiaMode,DEFAULT) && shapes.empty())
+            throw "Error: Given current inertia mode flag, Body::inertia only makes sense if Body contains Shapes";
+        )
+        return pr(inner).cinertia;
+    },{
+        pr(inner).immutable_midstep("Body::inertia");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        DEBUG(
+            if(isNaN(inertia)) throw "Error: Inertia cannot be NaN";
+            if(inertia<=0) throw "Error: Inertia must be strictly positive";
+            if(inertia>=PR(Const).POSINF()) throw "Error: Inertia cannot be infinite, use allowRotation = false instead";
+        )
+        pr(inner).inertiaMode = Flag(InertiaMode,FIXED);
+        pr(inner).cinertia = inertia;
+        pr(inner).invalidate_inertia();
+    })
+
+    !!/**
+    !! * Compute set of bodies connected via constraints.
+    !! * <br/><br/>
+    !! * Only constraints that are inside of a Space will be considered the
+    !! * same way that the body's constraints list only tracks constraints
+    !! * that are part of a simulation.
+    !! *
+    !! * @param depth Control the depth limit of the graph search. Negative
+    !! *              values indicate an unlimited search. A depth value of
+    !! *              0 would cause only the current Body to be returned.
+    !! *              (default -1)
+    !! * @param output An optional list to append results to, if left as null
+    !! *               then a new list is created.
+    !! * @return A list of the connected bodies up to
+    !! *         the given graph depth.
+    !! */
+    keep public function connectedBodies(depth:Int=-1, output:BodyList=null):BodyList {
+        return pr(inner).connectedBodies(depth, output);
+    }
+
+    !!/**
+    !! * Compute set of bodies interacting with this body.
+    !! *
+    !! * @param type When not equal to null, this parameter controls what sort
+    !! *             of interaction we permit in the search.
+    !! * @param depth Control the depth limit of the graph search. Negative
+    !! *              values indicate an unlimited search. A depth value of
+    !! *              0 would cause only the current Body to be returned.
+    !! *              (default -1)
+    !! * @param output An optional list to append results to, if left as null
+    !! *               then a new list is created.
+    !! * @return A list of the interacting bodies up to
+    !! *         the given graph depth.
+    !! */
+    keep public function interactingBodies(type:InteractionType=null, depth:Int=-1, output:BodyList=null) {
+        var arbiter_type = if(type==null) {
+            PR(Arbiter).COL | PR(Arbiter).SENSOR | PR(Arbiter).FLUID;
+        }elif(type==InteractionType.COLLISION) PR(Arbiter).COL
+         elif(type==InteractionType.SENSOR)    PR(Arbiter).SENSOR
+         else                                  PR(Arbiter).FLUID;
+
+        return pr(inner).interactingBodies(arbiter_type, depth, output);
+    }
+
+    !!/**
+    !! * Determine how much this body is being crushed.
+    !! * <br/><br/>
+    !! * This is an approximate value, computed as:
+    !! * <code>crushFactor = (sum(magnitude(impulse)) - magnitude(sum(impulse))) / mass</code>
+    !! * <br/><br/>
+    !! * In this way, it is a mass and time step invariant value which is 0 when all impulses
+    !! * are acting on body in the same direction, and has maximum value when impulses
+    !! * act in opposing directions 'crushing' the Body.
+    !! *
+    !! * @return A positive value representing an approximation to how much the
+    !! *         body is being crushed.
+    !! * @throws # If body is not in a Space.
+    !! */
+    keep public function crushFactor():Float {
+        DEBUG(
+            if(space==null) throw "Error: Makes no sense to see how much an object not taking part in a simulation is being crushed";)
+        var msum = 0.0;
+        var jsum = Vec2.get();
+
+        for(arb in arbiters) {
+            var imp3 = arb.totalImpulse(this);
+            var imp = imp3.xy();
+            jsum.addeq(imp);
+            msum += imp.length;
+            imp.dispose();
+            imp3.dispose();
+        }
+        for(con in constraints) {
+            var imp3 = con.bodyImpulse(this);
+            var imp = imp3.xy();
+            jsum.addeq(imp);
+            msum += imp.length;
+            imp.dispose();
+            imp3.dispose();
+        }
+
+        var ret = (msum - jsum.length) / (this.mass * space.pr(inner).pre_dt);
+        jsum.dispose();
+        return ret;
+    }
+
+    !!/**
+    !! * Transform a point from Body's local coordinates to world coordinates.
+    !! *
+    !! * @param point The point to transform.
+    !! * @param weak If true the returned Vec2 will be automatically released
+    !! *             back to object pool when used as an argument to a Nape function.
+    !! *             (default false)
+    !! * @return The result of the transformation.
+    !! * @throws # If point is null or disposed of.
+    !! */
+    keep public function localPointToWorld(point:Vec2,weak:Bool=false) {
+        Disposed(point,Vec2);
+        DEBUG(if(point==null) throw "Error: Cannot transform null Vec2";)
+        pr(inner).validate_axis();
+        vec_new(temp);
+        vec_rotate(point.,pr(inner).axis,temp);
+        WEAK(point);
+        return Vec2.get(tempx + pr(inner).posx,tempy + pr(inner).posy,weak);
+    }
+    !!/**
+    !! * Transform a point from world coordinates to Body's local coordinates.
+    !! *
+    !! * @param point The point to transform.
+    !! * @param weak If true the returned Vec2 will be automatically released
+    !! *             back to object pool when used as an argument to a Nape function.
+    !! *             (default false)
+    !! * @return The result of the transformation.
+    !! * @throws # If point is null or disposed of.
+    !! */
+    keep public function worldPointToLocal(point:Vec2,weak:Bool=false) {
+        Disposed(point,Vec2);
+        DEBUG(if(point==null) throw "Error: Cannot transform null Vec2";)
+        pr(inner).validate_axis();
+        vec_new(temp);
+        vec_new(point); vec_sub(point., pr(inner).pos, point);
+        vec_revrot(point,pr(inner).axis,temp);
+        WEAK(point);
+        return Vec2.get(tempx,tempy,weak);
+    }
+
+    !!/**
+    !! * Transform vector from Body's local coordinates into world coordinates.
+    !! * <br/><br/>
+    !! *
+    !! * @param vector The vector to transform.
+    !! * @param weak If true the returned Vec2 will be automatically released
+    !! *             back to object pool when used as an argument to a Nape function.
+    !! *             (default false)
+    !! * @return The result of the transformation.
+    !! * @throws # If vector is null or disposed of.
+    !! */
+    keep public function localVectorToWorld(vector:Vec2,weak:Bool=false) {
+        Disposed(vector,Vec2);
+        DEBUG(if(vector==null) throw "Error: Cannot transform null Vec2";)
+        pr(inner).validate_axis();
+        vec_new(temp);
+        vec_rotate(vector.,pr(inner).axis,temp);
+        WEAK(vector);
+        return Vec2.get(tempx,tempy,weak);
+    }
+
+    !!/**
+    !! * Transform vector from world coordinates to Body's local coordinates
+    !! * <br/><br/>
+    !! *
+    !! * @param vector The vector to transform.
+    !! * @param weak If true the returned Vec2 will be automatically released
+    !! *             back to object pool when used as an argument to a Nape function.
+    !! *             (default false)
+    !! * @return The result of the transformation.
+    !! * @throws # If vector is null or disposed of.
+    !! */
+    keep public function worldVectorToLocal(vector:Vec2,weak:Bool=false) {
+        Disposed(vector,Vec2);
+        DEBUG(if(vector==null) throw "Error: Cannot transform null Vec2";)
+        pr(inner).validate_axis();
+        vec_new(temp);
+        vec_revrot(vector.,pr(inner).axis,temp);
+        WEAK(vector);
+        return Vec2.get(tempx,tempy,weak);
+    }
+
+    !!/**
+    !! * Apply impulse to a point on Body.
+    !! * <br/><br/>
+    !! * If position argument is not given, then body.position is assumed so that impulse
+    !! * is applied at centre of Body.
+    !! *
+    !! * @param impulse The impulse to apply given in world coordinates.
+    !! * @param pos The position to apply impulse given in world coordinates.
+    !! *            (default body.position)
+    !! * @param sleepable This parameter can be set to true, in the case that you
+    !! *                  are constantly applying an impulse which is dependent only
+    !! *                  on the position/velocity of the body meaning that application
+    !! *                  of this impulse does not need to prevent the object from sleeping.
+    !! *                  When true, and the body is sleeping, this method call will not
+    !! *                  apply any impulse.
+    !! *                  (default false).
+    !! * @throws # If impulse is null or disposed of.
+    !! * @throws # If pos is non-null and disposed of.
+    !! * @returns A reference to 'this' Body.
+    !! */
+    keep public function applyImpulse(impulse:Vec2,pos:Vec2=null,sleepable:Bool=false) {
+        Disposed(impulse,Vec2);
+        Disposed(pos,Vec2);
+
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        DEBUG(if(impulse == null) throw "Error: Cannot apply null impulse to Body";)
+
+        if (sleepable && isSleeping) {
+            WEAK(impulse);
+            if (pos != null) {
+                WEAK(pos);
+            }
+            return this;
+        }
+
+        pr(inner).validate_mass();
+        vec_addeq(pr(inner).vel,impulse.,pr(inner).imass);
+        if(pos!=null) {
+            vec_new(r); vec_sub(pos.,pr(inner).pos,r);
+            pr(inner).validate_inertia();
+            pr(inner).angvel += vec_cross(r,impulse.)*pr(inner).iinertia;
+            WEAK(pos);
+        }
+        if (!sleepable) {
+            if(isDynamic()) pr(inner).invalidate_wake();
+        }
+
+        WEAK(impulse);
+        return this;
+    }
+
+    !!/**
+    !! * Apply a pure angular impulse to Body.
+    !! *
+    !! * @param impulse The angular impulse to apply.
+    !! * @param sleepable This parameter can be set to true, in the case that you
+    !! *                  are constantly applying an impulse which is dependent only
+    !! *                  on the position/velocity of the body meaning that application
+    !! *                  of this impulse does not need to prevent the object from sleeping.
+    !! *                  When true, and the body is sleeping, this method call will not
+    !! *                  apply any impulse.
+    !! *                  (default false).
+    !! * @returns A reference to 'this' Body.
+    !! */
+    keep public function applyAngularImpulse(impulse:Float, sleepable:Bool=false) {
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        if (sleepable && isSleeping) {
+            return this;
+        }
+
+        pr(inner).validate_inertia();
+        pr(inner).angvel += impulse * pr(inner).iinertia;
+        if (!sleepable) {
+            if(isDynamic()) pr(inner).invalidate_wake();
+        }
+
+        return this;
+    }
+
+    !!/**
+    !! * Translate each shape in local coordinates.
+    !! * <br/><br/>
+    !! * This operation does not effect the Body's position, but the position
+    !! * of the shapes 'inside' of the Body.
+    !! *
+    !! * @param translation The local translation to apply to Shapes.
+    !! * @return A reference to this Body.
+    !! * @throws # If translation is null or has been disposed of.
+    !! * @throws # If this Body is static, and inside of a Space.
+    !! */
+    keep public function translateShapes(translation:Vec2) {
+        pr(inner).immutable_midstep("Body::translateShapes()");
+        Disposed(translation,Vec2);
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+        DEBUG(if(translation==null) throw "Error: Cannot displace by null Vec2";)
+
+        var weak = translation.pr(inner).weak;
+        translation.pr(inner).weak = false;
+
+        Iter(s,pr(inner).shapes,s.outer.translate(translation));
+
+        translation.pr(inner).weak = weak;
+        WEAK(translation);
+        return this;
+    }
+
+    !!/**
+    !! * Rotate each shape in local coordinates.
+    !! * <br/><br/>
+    !! * This operation does not effect the Body's rotation, but rotates
+    !! * each of the shapes 'inside' of the Body.
+    !! *
+    !! * @param angle The angle to rotate shapes by in clockwise radians.
+    !! * @return A reference to this Body.
+    !! * @throws # If this Body is static, and inside of a Space.
+    !! */
+    keep public function rotateShapes(angle:Float) {
+        pr(inner).immutable_midstep("Body::rotateShapes()");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        Iter(s,pr(inner).shapes,s.outer.rotate(angle));
+        return this;
+    }
+
+    !!/**
+    !! * Scale each shape in local coordinates.
+    !! * <br/><br/>
+    !! * This operation does not affect the Body itself, but affects each
+    !! * Shape 'inside' of the Body instead.
+    !! *
+    !! * @param scaleX The x-coordinate factor of scaling.
+    !! * @param scaleY The y-coordinate factor of scaling.
+    !! * @return A reference to this Body.
+    !! * @throws # If this Body is static, and inside of a Space.
+    !! * @throws # If Body contains Circle shapes, and scaleX != scaleY
+    !! */
+    keep public function scaleShapes(scaleX:Float,scaleY:Float) {
+        pr(inner).immutable_midstep("Body::scaleShapes()");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        Iter(s,pr(inner).shapes,s.outer.scale(scaleX,scaleY));
+        return this;
+    }
+
+    !!/**
+    !! * Transform each shape in local coordiantes.
+    !! * <br/><br/>
+    !! * This operation does not affect the Body itself, but affects each
+    !! * Shape 'inside' of the Body instead.
+    !! *
+    !! * @param matrix The transformation matrix to apply to each Shape.
+    !! * @return A reference to this Body.
+    !! * @throws # If this Body is static, and inside of a Space.
+    !! * @throws # If matrix is null or singular.
+    !! * @throws # If Body contains Circle shapes, and input matrix is
+    !! *           not equiorthogonal.
+    !! */
+    keep public function transformShapes(matrix:Mat23) {
+        pr(inner).immutable_midstep("Body::transformShapes()");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        Iter(s,pr(inner).shapes,s.outer.transform(matrix));
+        return this;
+    }
+
+    !!/**
+    !! * Align rigid body so that its origin is also its centre of mass.
+    !! * <br/><br/>
+    !! * This operation will both translate the Shapes inside of the Body,
+    !! * as well as translating the Body itself so that its 'apparent' position
+    !! * has not been modified.
+    !! * <br/><br/>
+    !! * Alignment of Rigid bodies is necessary for dynamic bodies so that
+    !! * they will interact and rotate as expected.
+    !! * <br/><br/>
+    !! * Simple Body's created with a single Polygon.box() or basic Circle
+    !! * will already be aligned.
+    !! *
+    !! * @return A reference to this Body.
+    !! */
+    keep public function align() {
+        pr(inner).immutable_midstep("Body::align()");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        DEBUG(if(pr(inner).shapes.empty())
+            throw "Error: Cannot align empty Body";
+        )
+        pr(inner).validate_localCOM();
+        var dx = Vec2.get(-pr(inner).localCOMx,-pr(inner).localCOMy);
+        translateShapes(dx);
+        var dx2 = localVectorToWorld(dx);
+        position.subeq(dx2);
+
+        if(pr(inner).pre_posx < PR(Const).POSINF())
+            vec_subeq(pr(inner).pre_pos,dx2.);
+        dx.dispose();
+        dx2.dispose();
+        return this;
+    }
+
+    !!/**
+    !! * Rotate body about about given point.
+    !! * <br/><br/>
+    !! * Please note that this method is equivalent to teleporting the body,
+    !! * the same way direct manipulation of position and rotation is.
+    !! *
+    !! * @param centre The centre of rotation in world coordinates.
+    !! * @param angle The angle to rotate body by in clockwise radians.
+    !! * @return A reference to this Body.
+    !! * @throws # If this Body is static, and inside of a Space.
+    !! * @throws # If centre is null or disposed of.
+    !! */
+    keep public function rotate(centre:Vec2, angle:Float) {
+        Disposed(centre,Vec2);
+        DEBUG(if(centre==null) throw "Error: Cannot rotate about a null Vec2";)
+        DEBUG(if(isNaN(angle)) throw "Error: Cannot rotate by NaN radians";)
+
+        var weak = centre.pr(inner).weak;
+        centre.pr(inner).weak = false;
+
+        var del = position.sub(centre);
+        del.rotate(angle);
+        position = centre.add(del,true);
+        del.dispose();
+
+        rotation += angle;
+
+        centre.pr(inner).weak = weak;
+        WEAK(centre);
+        return this;
+    }
+
+    !!/**
+    !! * Set material of all shapes.
+    !! * <br/><br/>
+    !! * Equivalent to: <code>body.shapes.foreach(function (shape) shape.material = material)</code>
+    !! *
+    !! * @param material The material to set Shape's material to.
+    !! * @return A reference to this Body.
+    !! */
+    keep public function setShapeMaterials(material:Material) {
+        pr(inner).immutable_midstep("Body::setShapeMaterials()");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        Iter(s,pr(inner).shapes,s.outer.material = material);
+        return this;
+    }
+
+    !!/**
+    !! * Set interaction filter of all shapes.
+    !! * <br/><br/>
+    !! * Equivalent to: <code>body.shapes.foreach(function (shape) shape.filter = filter)</code>
+    !! *
+    !! * @param filter The filter to set Shape's filter to.
+    !! * @return A reference to this Body.
+    !! */
+    keep public function setShapeFilters(filter:InteractionFilter) {
+        pr(inner).immutable_midstep("Body::setShapeFilters()");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        Iter(s,pr(inner).shapes,s.outer.filter = filter);
+        return this;
+    }
+
+    !!/**
+    !! * Set fluidProperties of all shapes.
+    !! * <br/><br/>
+    !! * Equivalent to: <code>body.shapes.foreach(function (shape) shape.fluidProperties = fluidProperties)</code>
+    !! *
+    !! * @param fluidProperties The fluidProperties to set Shape's fluidProperties to.
+    !! * @return A reference to this Body.
+    !! */
+    keep public function setShapeFluidProperties(fluidProperties:FluidProperties) {
+        pr(inner).immutable_midstep("Body::setShapeFluidProperties()");
+        DEBUG(if(pr(inner).world) throw "Error: Space::world is immutable";)
+
+        Iter(s,pr(inner).shapes,s.outer.fluidProperties = fluidProperties);
+        return this;
+    }
+
+    $(mixin comprop(n)
+        property(n,Vec2,{
+            DEBUG(if(pr(inner).world) throw "Error: Space::world has no "+$str(n);)
+            if(pr(inner).wrap_`n==null) {
+                pr(inner).wrap_`n = Vec2.get(pr(inner).n`x,pr(inner).n`y);
+                pr(inner).wrap_`n.pr(inner)._inuse = true;
+                pr(inner).wrap_`n.pr(inner)._immutable = true;
+                pr(inner).wrap_`n.pr(inner)._validate = pr(inner).get`n;
+            }
+            return pr(inner).wrap_`n;
+        })
+    );
+
+    !!/**
+    !! * Local centre of mass of Body.
+    !! * <br/><br/>
+    !! * This value can be accessed even if Body has no shapes, but attempting
+    !! * to query its values will result in a debug build error.
+    !! * <br/><br/>
+    !! * This Vec2 is immutable.
+    !! */
+    comprop(localCOM)
+
+    !!/**
+    !! * World centre of mass of Body.
+    !! * <br/><br/>
+    !! * This value can be accessed even if Body has no shapes, but attempting
+    !! * to query its values will result in a debug build error.
+    !! * <br/><br/>
+    !! * This Vec2 is immutable.
+    !! */
+    comprop(worldCOM)
+
+    $(mixin witharbs(TYPE, block) {
+        var arbs = pr(inner).arbiters;
+        for(oarb in arbiters) {
+            var arb = oarb.pr(inner);
+            if(arb.type != PR(Arbiter).TYPE) continue;
+            if(body != null && arb.b2 != body.pr(inner) && arb.b1 != body.pr(inner)) continue;
+
+            block;
+        }
+    });
+
+    !!/**
+    !! * Evaluate sum effect of all normal contact impulses on Body.
+    !! * <br/><br/>
+    !! * If the body argument is non-null, then only impulses between 'this' and
+    !! * the given Body will be considered.
+    !! *
+    !! * @param body The Body to restrict consideration of impulses with.
+    !! *             (default null)
+    !! * @param freshOnly If true, then only 'new' contact points will be considered.
+    !! *             (default false)
+    !! * @return The summed effect of impulses acting on Body.
+    !! */
+    keep public function normalImpulse(body:Body=null,freshOnly:Bool=false) {
+        vec3_new(ret,0,0,0);
+        witharbs(COL,{
+            var imp = arb.wrapper().collisionArbiter.normalImpulse(this,freshOnly);
+            vec3_addeq(ret, imp.);
+            imp.dispose();
+        });
+        return Vec3.get(retx,rety,retz);
+    }
+
+    !!/**
+    !! * Evaluate sum effect of all tangent contact impulses on Body.
+    !! * <br/><br/>
+    !! * If the body argument is non-null, then only impulses between 'this' and
+    !! * the given Body will be considered.
+    !! *
+    !! * @param body The Body to restrict consideration of impulses with.
+    !! *             (default null)
+    !! * @param freshOnly If true, then only 'new' contact points will be considered.
+    !! *             (default false)
+    !! * @return The summed effect of impulses acting on Body.
+    !! */
+    keep public function tangentImpulse(body:Body=null,freshOnly:Bool=false) {
+        vec3_new(ret,0,0,0);
+        witharbs(COL,{
+            var imp = arb.wrapper().collisionArbiter.tangentImpulse(this,freshOnly);
+            vec3_addeq(ret, imp.);
+            imp.dispose();
+        });
+        return Vec3.get(retx,rety,retz);
+    }
+
+    !!/**
+    !! * Evaluate sum effect of all contact impulses on Body.
+    !! * <br/><br/>
+    !! * If the body argument is non-null, then only impulses between 'this' and
+    !! * the given Body will be considered.
+    !! *
+    !! * @param body The Body to restrict consideration of impulses with.
+    !! *             (default null)
+    !! * @param freshOnly If true, then only 'new' contact points will be considered.
+    !! *             (default false)
+    !! * @return The summed effect of impulses acting on Body.
+    !! */
+    keep public function totalContactsImpulse(body:Body=null,freshOnly:Bool=false) {
+        vec3_new(ret,0,0,0);
+        witharbs(COL,{
+            var imp = arb.wrapper().collisionArbiter.totalImpulse(this,freshOnly);
+            vec3_addeq(ret, imp.);
+            imp.dispose();
+        });
+        return Vec3.get(retx,rety,retz);
+    }
+
+    !!/**
+    !! * Evaluate sum effect of all rolling friction contact impulses on Body.
+    !! * <br/><br/
+    !! * If the body argument is non-null, then only impulses between 'this' and
+    !! * the given Body will be considered.
+    !! *
+    !! * @param body The Body to restrict consideration of impulses with.
+    !! *             (default null)
+    !! * @param freshOnly If true, then only 'new' contact points will be considered.
+    !! *             (default false)
+    !! * @return The summed effect of impulses acting on Body.
+    !! */
+    keep public function rollingImpulse(body:Body=null,freshOnly:Bool=false) {
+        var ret = 0.0;
+        witharbs(COL,{
+            ret += arb.wrapper().collisionArbiter.rollingImpulse(this,freshOnly);
+        });
+        return ret;
+    }
+
+    !!/**
+    !! * Evaluate sum effect of all buoyancy impulses acting on Body.
+    !! * <br/><br/
+    !! * If the body argument is non-null, then only impulses between 'this' and
+    !! * the given Body will be considered.
+    !! *
+    !! * @param body The Body to restrict consideration of impulses with.
+    !! *             (default null)
+    !! * @return The summed effect of impulses acting on Body.
+    !! */
+    keep public function buoyancyImpulse(body:Body=null) {
+        vec3_new(ret,0,0,0);
+        witharbs(FLUID,{
+            var imp = arb.wrapper().fluidArbiter.buoyancyImpulse(this);
+            vec3_addeq(ret, imp.);
+            imp.dispose();
+        });
+        return Vec3.get(retx,rety,retz);
+    }
+
+    !!/**
+    !! * Evaluate sum effect of all fluid drag impulses acting on Body.
+    !! * <br/><br/
+    !! * If the body argument is non-null, then only impulses between 'this' and
+    !! * the given Body will be considered.
+    !! *
+    !! * @param body The Body to restrict consideration of impulses with.
+    !! *             (default null)
+    !! * @return The summed effect of impulses acting on Body.
+    !! */
+    keep public function dragImpulse(body:Body=null) {
+        vec3_new(ret,0,0,0);
+        witharbs(FLUID,{
+            var imp = arb.wrapper().fluidArbiter.dragImpulse(this);
+            vec3_addeq(ret, imp.);
+            imp.dispose();
+        });
+        return Vec3.get(retx,rety,retz);
+    }
+
+    !!/**
+    !! * Evaluate sum effect of all fluid impulses acting on Body.
+    !! * <br/><br/
+    !! * If the body argument is non-null, then only impulses between 'this' and
+    !! * the given Body will be considered.
+    !! *
+    !! * @param body The Body to restrict consideration of impulses with.
+    !! *             (default null)
+    !! * @return The summed effect of impulses acting on Body.
+    !! */
+    keep public function totalFluidImpulse(body:Body=null) {
+        vec3_new(ret,0,0,0);
+        witharbs(FLUID,{
+            var imp = arb.wrapper().fluidArbiter.totalImpulse(this);
+            vec3_addeq(ret, imp.);
+            imp.dispose();
+        });
+        return Vec3.get(retx,rety,retz);
+    }
+
+    !!/**
+    !! * Evaluate sum effect of all constraint impulses on this Body.
+    !! *
+    !! * @return The summed effect of constraint impulses acting on Body.
+    !! */
+    keep public function constraintsImpulse() {
+        vec3_new(ret,0,0,0);
+        Iter(con,pr(inner).constraints,{
+            var imp = con.outer.bodyImpulse(this);
+            vec3_addeq(ret, imp.);
+            imp.dispose();
+        });
+        return Vec3.get(retx,rety,retz);
+    }
+
+    !!/**
+    !! * Evaluate sum effect of all impulses on Body.
+    !! * <br/><br/
+    !! * If the body argument is non-null, then only impulses between 'this' and
+    !! * the given Body will be considered when evaluating interaction impulses.
+    !! * <br/>
+    !! * Constraint impulses are not effected by the body argument.
+    !! *
+    !! * @param body The Body to restrict consideration of impulses with.
+    !! *             (default null)
+    !! * @param freshOnly If true, then only 'new' contact points will be considered
+    !! *             when evaluating contact impulses.
+    !! *             (default false)
+    !! * @return The summed effect of impulses acting on Body.
+    !! */
+    keep public function totalImpulse(body:Body=null,freshOnly:Bool=false) {
+        vec3_new(ret,0,0,0);
+        var arbs = pr(inner).arbiters;
+
+        for(oarb in arbiters) {
+            var arb = oarb.pr(inner);
+            if(arb.type == PR(Arbiter).SENSOR) continue;
+            if(body != null && arb.b2 != body.pr(inner) && arb.b1 != body.pr(inner)) continue;
+
+            var imp = arb.wrapper().totalImpulse(this,freshOnly);
+            vec3_addeq(ret, imp.);
+            imp.dispose();
+        }
+
+        Iter(con, pr(inner).constraints, {
+            if(con.active) {
+                var imp = con.outer.bodyImpulse(this);
+                vec3_addeq(ret, imp.);
+                imp.dispose();
+            }
+        });
+        return Vec3.get(retx,rety,retz);
+    }
+
+    !!/**
+    !! * Determine if point is contained in Body.
+    !! *
+    !! * @param point The point to test containment for in world coordinates.
+    !! * @return True if point is contained.
+    !! * @throws # If point is null or has been disposed.
+    !! */
+    keep public function contains(point:Vec2) {
+        Disposed(point,Vec2);
+        DEBUG(if(point==null) throw "Error: Cannot check containment of null point";)
+
+        var wasWeak = point.pr(inner).weak;
+        point.pr(inner).weak = false;
+
+        var retvar;
+        Exists(s, pr(inner).shapes, s.outer.contains(point), retvar);
+
+        point.pr(inner).weak = wasWeak;
+        WEAK(point);
+
+        return retvar;
+    }
+
+    !!/**
+    !! * @private
+    !! */
+    @:$keep public override function toString() {
+        return (pr(inner).world?"(space::world":("("+(isDynamic()?"dynamic":isStatic()?"static":"kinematic")))+")#"+id;
+    }
+}

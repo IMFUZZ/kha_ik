@@ -1,0 +1,197 @@
+package nape.callbacks;
+$(import);
+
+!!/**
+!! * Event listener for Interaction type events.
+!! * <br/><br/>
+!! * Interaction type events can occur between any two Interactors (whether they
+!! * be Shapes, Bodys, Compounds or a mix thereof).
+!! * <br/><br/>
+!! * The events that can be caught are BEGIN, ONGOING, and END type events.
+!! * Theses listeners will operate between pairs of Interactors.
+!! * <pre>
+!! *          _Space
+!! *         /      \
+!! *     Cmp1        Cmp3
+!! *    /    \         |
+!! * Body1  Cmp2     Body3
+!! *   |      |        |
+!! * Shp1   Body2    Shp3
+!! *          |
+!! *        Shp2
+!! * </pre>
+!! * The possible interactor pairs for callbacks are formed by finding the most
+!! * recent common ancestor in the world for the given pair of shapes and taking all
+!! * possible pairings. In the above situation we have:
+!! * <pre>
+!! * MRCA(Shp1, Shp2) = Cmp1  --> Possible pairings = [Shp1, Body1] x [Shp2, Body2, Cmp2]
+!! * MRCA(Shp1, Shp3) = Space --> Possible pairings = [Shp1, Body1, Cmp1] x [Shp3, Body3, Cmp3]
+!! * MRCA(Shp2, Shp3) = Space --> Possible pairings = [Shp2, Body2, Cmp2, Cmp1] x [Shp3, Body3, Cmp3]
+!! * </pre>
+!! * Of course, not all of these pairings will generate callbacks, only those for which
+!! * a valid listener exists for the event type, and for the cbtypes of each interactor.
+!! * <br/><br/>
+!! * Furthermore, the listener specifies an interaction type which works even in mixed
+!! * cases where many types of interaction between two objects is happening at once.
+!! */
+@:final class InteractionListener extends Listener {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner_zn):PR(InteractionListener) = null;
+
+    !!/**
+    !! * The OptionType used to match against Interactors for the first object.
+    !! */
+    property(options1, OptionType, {
+        return pr(inner_zn).options1.outer;
+    }, {
+        pr(inner_zn).options1.set(options1.pr(inner));
+    })
+
+    !!/**
+    !! * The OptionType used to match against Interactors for the second object.
+    !! */
+    property(options2, OptionType, {
+        return pr(inner_zn).options2.outer;
+    }, {
+        pr(inner_zn).options2.set(options2.pr(inner));
+    })
+
+    !!/**
+    !! * The specific type of interaction that is to be listened for.
+    !! * <br/><br/>
+    !! * If we specify that we only want to listen for a fluid type interaction, then
+    !! * this listener will operate so that any other interactions for the same pair
+    !! * of objects is ignored.
+    !! */
+    property(interactionType, InteractionType, {
+        var ret = pr(inner_zn).itype;
+        return
+            if   (ret==Flag(InteractionType, COLLISION)) InteractionType.COLLISION;
+            elif (ret==Flag(InteractionType, SENSOR))    InteractionType.SENSOR;
+            elif (ret==Flag(InteractionType, FLUID))     InteractionType.FLUID;
+            elif (ret==Flag(InteractionType, ANY))       InteractionType.ANY;
+            else null; // necessary!! itype is initially 0 which corresponds to 'no' interaction type.
+    },{
+        DEBUG(
+            if (interactionType == null) {
+                throw "Error: Cannot set listener interaction type to null";
+            }
+        )
+
+        if (this.interactionType != interactionType) {
+            var xtype =
+                if   (interactionType == InteractionType.COLLISION) Flag(InteractionType, COLLISION)
+                elif (interactionType == InteractionType.SENSOR)    Flag(InteractionType, SENSOR)
+                elif (interactionType == InteractionType.FLUID)     Flag(InteractionType, FLUID)
+                else Flag(InteractionType, ANY);
+            pr(inner_zn).setInteractionType(xtype);
+        }
+    })
+
+    !!/**
+    !! * The callback handler for this listener.
+    !! */
+    property(handler, InteractionCallback->Void, {
+        return pr(inner_zn).handleri;
+    }, {
+        DEBUG(
+            if (handler == null) {
+                throw "Error: InteractionListener::handler cannot be null";
+            }
+        )
+
+        pr(inner_zn).handleri = handler;
+    })
+
+    !!/**
+    !! * For ONGOING listeners only, permit ONGOING callbacks whilst sleeping.
+    !! * <br/><br/>
+    !! * This property determines whether we will still receive
+    !! * ONGOING callbacks between two sleeping Interactors. The default action is to
+    !! * inhibit callbacks between sleeping objects for performance. Setting this field to true
+    !! * will permit Nape to always generate callbacks.
+    !! */
+    property(allowSleepingCallbacks, Bool, {
+        return pr(inner_zn).allowSleepingCallbacks;
+    }, {
+        pr(inner_zn).allowSleepingCallbacks = allowSleepingCallbacks;
+    })
+
+    !!/**
+    !! * Construct a new InteractionListener.
+    !! * <br/><br/>
+    !! * The possible event types are BEGIN, ONGOING and END.
+    !! * <br/><br/>
+    !! * The options arguments are typed Dynamic, and are permitted to be either an
+    !! * <code>OptionType</code> or one of:
+    !! * <code>CbType, CbTypeList, Array&lt;CbType&gt;, flash.Vector&lt;CbType&gt;</code>
+    !! * In which case the input CbType's will be used to construct an OptionType
+    !! * whose included types will be the set of CbTypes supplied.
+    !! *
+    !! * @param event The event type to listen for.
+    !! * @param interactionType The interaction type to listen for.
+    !! * @param options1 The OptionType to match first Interactor against, passing null
+    !! *                will equate to an empty OptionType.
+    !! * @param options2 The OptionType to match second Interactor against, passing null
+    !! *                will equate to an empty OptionType.
+    !! * @param handler The callback handler for this listener.
+    !! * @param precedence The precedence of this listener used to sort
+    !! *                   the order of callbacks in the case of more than
+    !! *                   one suitable BodyListener existing for the same
+    !! *                   event on the same Body. (default 0)
+    !! * @return The newly constructed InteractionListener
+    !! * @throws # If handler is null.
+    !! * @throws # If the event type is not permitted for this listener.
+    !! * @throws # If either option is not of the expected Type.
+    !! */
+    flibopts(1)
+    public function new(
+        event:CbEvent,
+        interactionType:InteractionType,
+        options1:Null<Dynamic>,
+        options2:Null<Dynamic>,
+        handler:InteractionCallback->Void,
+        precedence:Int = 0
+    ) {
+        DEBUG(PR(Listener).internal = true;)
+        super();
+        DEBUG(PR(Listener).internal = false;)
+
+        DEBUG(
+            if (handler == null) {
+                throw "Error: InteractionListener::handler cannot be null";
+            }
+            if (event == null) {
+                throw "Error: CbEvent cannot be null for InteractionListener";
+            }
+        )
+
+        var xevent = -1;
+        if  (event == CbEvent.BEGIN)   xevent = Flag(CbEvent, BEGIN);
+        elif(event == CbEvent.END)     xevent = Flag(CbEvent, END);
+        elif(event == CbEvent.ONGOING) xevent = Flag(CbEvent, ONGOING);
+        else {
+            DEBUG(
+                throw "Error: CbEvent '"+event.toString()+"' is not a valid event type for InteractionListener";
+            )
+        }
+
+        pr(inner_zn) = new PR(InteractionListener)(
+            PR(OptionType).argument(options1),
+            PR(OptionType).argument(options2),
+            xevent,
+            Flag(ListenerType, INTERACTION)
+        );
+
+        pr(inner) = pr(inner_zn);
+        pr(inner).outer = this;
+        pr(inner_zn).outer_zni = this;
+        pr(inner).precedence = precedence;
+
+        pr(inner_zn).handleri = handler;
+        this.interactionType = interactionType;
+    }
+}
+

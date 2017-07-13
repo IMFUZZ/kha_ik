@@ -1,0 +1,128 @@
+package nape.callbacks;
+$(import);
+
+!!/**
+!! * Base type for all Nape callback listeners.
+!! */
+class Listener {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner):PR(Listener) = null;
+
+    !!/**
+    !! * The sub-type of this listener.
+    !! */
+    property(type, ListenerType, {
+        return PR(Listener).types[pr(inner).type];
+    })
+
+    !!/**
+    !! * The CbEvent this listener responds to.
+    !! */
+    property(event, CbEvent, {
+        return PR(Listener).events[pr(inner).event];
+    }, {
+        DEBUG(
+            if (event == null) {
+                throw "Error: Cannot set listener event type to null";
+            }
+        )
+
+        if (this.event != event) {
+            var xevent =
+                if   (event == CbEvent.BEGIN)   Flag(CbEvent, BEGIN)
+                elif (event == CbEvent.ONGOING) Flag(CbEvent, ONGOING)
+                elif (event == CbEvent.END)     Flag(CbEvent, END)
+                elif (event == CbEvent.SLEEP)   Flag(CbEvent, SLEEP)
+                elif (event == CbEvent.WAKE)    Flag(CbEvent, WAKE)
+                elif (event == CbEvent.PRE)     Flag(CbEvent, PRE)
+                else Flag(CbEvent, BREAK);
+
+            pr(inner).swapEvent(xevent);
+        }
+    })
+
+    !!/**
+    !! * The precedence of this listener.
+    !! * <br/><br/>
+    !! * In any case that there is more than one suitable listener for a situation,
+    !! * the listeners will be ordered by their precedence.
+    !! *
+    !! * @default 0
+    !! */
+    property(precedence, Int, {
+        return pr(inner).precedence;
+    }, {
+        if (this.precedence != precedence) {
+            pr(inner).precedence = precedence;
+            pr(inner).invalidate_precedence();
+        }
+    })
+
+    !!/**
+    !! * @private
+    !! */
+    public function new() {
+        DEBUG(
+            if (!PR(Listener).internal) {
+                throw "Error: Cannot instantiate Listener derp!";
+            }
+        )
+    }
+
+    !!/**
+    !! * The Space this listener is assigned to.
+    !! * <br/><br/>
+    !! * This value can be set, with setting to null being equivalent to removing
+    !! * the listener from whichever Space it is presently assigned to.
+    !! *
+    !! * @default null
+    !! */
+    property(space, Null<Space>, {
+        return if (pr(inner).space == null) null else pr(inner).space.outer;
+    },{
+        if (this.space != space) {
+            // Remove from old space.
+            if (pr(inner).space != null) {
+                pr(inner).space.outer.listeners.remove(this);
+            }
+
+            // Assign to new space.
+            if (space!=null) {
+                space.listeners.add(this);
+            }
+            else {
+                pr(inner).space = null;
+            }
+        }
+    })
+
+    !!/**
+    !! * @private
+    !! */
+    @:$keep public function toString() {
+        var event = ["BEGIN","END","WAKE","SLEEP","BREAK","PRE","ONGOING"][pr(inner).event];
+        if (pr(inner).type == Flag(ListenerType, BODY)) {
+            var body = pr(inner).body;
+            return "BodyListener{"+event+"::"+body.outer_zn.options+"}";
+        }else if (pr(inner).type == Flag(ListenerType, CONSTRAINT)) {
+            var con = pr(inner).constraint;
+            return "ConstraintListener{"+event+"::"+con.outer_zn.options+"}";
+        }else {
+            var con = pr(inner).interaction;
+            var itype = switch(con.itype) {
+                case Flag(InteractionType,COLLISION): "COLLISION";
+                case Flag(InteractionType,SENSOR):    "SENSOR";
+                case Flag(InteractionType,FLUID):     "FLUID";
+                default: "ALL";
+            }
+            return (if(pr(inner).type==Flag(ListenerType,INTERACTION))
+                "InteractionListener{"+event+"#"+itype+"::"+con.outer_zni.options1+":"+con.outer_zni.options2+"}"
+            else
+                "PreListener{"+itype+"::"+con.outer_znp.options1+":"+con.outer_znp.options2+"}")
+                + " precedence="+pr(inner).precedence;
+        }
+    }
+}
+

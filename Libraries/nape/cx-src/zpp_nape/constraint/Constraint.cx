@@ -1,0 +1,433 @@
+package zpp_nape.constraint;
+$(import);
+
+GENID(Constraint)
+class PR(Constraint) {
+    public var outer:Constraint = null;
+
+    public function clear() {}
+
+    public var id:Int = 0;
+    PrivateUserData
+
+    public var compound:PR(Compound) = null;
+
+    //assigned space
+    public var space:PR(Space) = null;
+
+    //whether to ignore (disable) constraint without removing it from space.
+    public var active:Bool = false;
+
+    //softness parameters + switch
+    public var stiff:Bool = false;
+    public var frequency:Float = 0.0;
+    public var damping:Float = 0.0;
+
+    //clamping/breaking
+    public var maxForce:Float = 0.0;
+    public var maxError:Float = 0.0;
+    public var breakUnderForce:Bool = false;
+    public var breakUnderError:Bool = false;
+
+    public var removeOnBreak:Bool = false; //if true, constraint is removed when broken rather than disabled.
+
+    public var component:PR(Component) = null;
+
+    //ignore collisions between bodies
+    public var ignore:Bool = false;
+
+    //velocity only constraints
+    public var __velocity:Bool = false;
+
+    public function new() {
+        __velocity = false;
+
+        id = ID(Constraint);
+
+        stiff = true;
+        active = true;
+        ignore = false;
+        frequency = 10;
+        damping = 1;
+        maxForce = PR(Const).POSINF();
+        maxError = PR(Const).POSINF();
+        breakUnderForce = false;
+
+        removeOnBreak = true;
+        pre_dt = -1.0;
+
+        cbTypes = new List(PR(CbType))();
+    }
+
+    //------------------------------------------------------------------------------------
+
+    public function immutable_midstep(name:String) {
+        DEBUG(if(space!=null && space.midstep)
+            throw "Error: Constraint::"+name+" cannot be set during space step()";
+        )
+    }
+
+    public var cbTypes:List(PR(CbType)) = null;
+    public var cbSet:PR(CbSet) = null; //assigned by Space
+    public var wrap_cbTypes:CbTypeList = null;
+
+    public function setupcbTypes() {
+        wrap_cbTypes = PR(CbTypeList).get(cbTypes);
+        wrap_cbTypes.pr(inner).adder = wrap_cbTypes_adder;
+        wrap_cbTypes.pr(inner).subber = wrap_cbTypes_subber;
+        wrap_cbTypes.pr(inner).dontremove = true; //done by subber
+        DEBUG(wrap_cbTypes.pr(inner)._modifiable = immutable_cbTypes;)
+    }
+    DEBUG(function immutable_cbTypes() {
+        immutable_midstep("Constraint::cbTypes");
+    })
+    function wrap_cbTypes_subber(pcb:CbType):Void {
+        var cb = pcb.pr(inner);
+        if(cbTypes.has(cb)) {
+            if(space!=null) {
+                dealloc_cbSet();
+                cb.remConstraint(this);
+            }
+
+            cbTypes.remove(cb);
+
+            if(space!=null) {
+                alloc_cbSet();
+                wake();
+            }
+        }
+    }
+    function wrap_cbTypes_adder(cb:CbType):Bool {
+        insert_cbtype(cb.pr(inner));
+        return false; //always prevent wrap_list inserting into real list
+    }
+    public function insert_cbtype(cb:PR(CbType)) {
+        if(!cbTypes.has(cb)) {
+            if(space!=null) {
+                dealloc_cbSet();
+                cb.addConstraint(this);
+            }
+
+            Insert(cb,cbTypes,PR(CbType).setlt);
+
+            if(space!=null) {
+                alloc_cbSet();
+                wake();
+            }
+        }
+    }
+
+    //--------------------------------------------------------------------
+
+    public function alloc_cbSet() {
+        assert(space!=null,"space null in alloc_cbSet");
+        if((cbSet = space.cbsets.get(cbTypes))!=null) {
+            cbSet.increment();
+            cbSet.addConstraint(this);
+        }
+    }
+    public function dealloc_cbSet() {
+        assert(space!=null,"space null in dealloc_cbSet");
+        if(cbSet!=null) {
+            cbSet.remConstraint(this);
+
+            if(cbSet.decrement()) {
+                space.cbsets.remove(cbSet);
+                Free(PR(CbSet),cbSet);
+            }
+            cbSet = null;
+        }
+    }
+
+    //------------------------------------------------------------------------------------
+
+    public function activate() {
+        if(space!=null) activeInSpace();
+    }
+    public function deactivate() {
+        if(space!=null) inactiveOrOutSpace();
+    }
+
+    public function addedToSpace() {
+        if(active) activeInSpace();
+
+        //do body lists
+        activeBodies();
+        //do CbTypes
+        Iter(cb, cbTypes, cb.addConstraint(this));
+    }
+    public function removedFromSpace() {
+        if(active) inactiveOrOutSpace();
+
+        //do body lists
+        inactiveBodies();
+        //do CbTypes
+        Iter(cb, cbTypes, cb.remConstraint(this));
+    }
+
+    //------------------------------------------------------------------------------------
+
+    public function activeInSpace() {
+        alloc_cbSet();
+
+        assert(component==null,"already has a component?");
+        Get(PR(Component), component);
+        component.isBody = false;
+        component.constraint = this;
+    }
+
+    public function inactiveOrOutSpace() {
+        dealloc_cbSet();
+
+        Free(PR(Component),component);
+        component = null;
+    }
+
+    //------------------------------------------------------------------------------------
+
+    //update body constraint lists.
+    keep public function   activeBodies() { assert(false,  "activeBodies not overriden"); }
+    keep public function inactiveBodies() { assert(false,"inactiveBodies not overriden"); }
+
+    //------------------------------------------------------------------------------------
+
+    //clear cached impulses
+    keep public function clearcache() { assert(false,"clearcache not overriden"); }
+
+    //validate constraint assignments
+    keep public function validate() { assert(false,"validate not overriden"); }
+
+    //wake connected bodies
+    keep public function wake_connected() { assert(false,"wake_connected not overriden"); }
+
+    //propogate constraint links to invasive disjoint set forest
+    keep public function forest() { assert(false,"forest not overriden"); }
+
+    //check body pair exists for ignoring.
+    keep public function pair_exists(id:Int,di:Int) {
+        assert(false,"pair_exists not overriden");
+        return false;
+    }
+
+    //called when constraint is broken (before callback and possible removal)
+    keep public function broken() {  }
+
+    keep public function warmStart() { assert(false,"warmStart not overriden"); }
+
+    public var pre_dt:Float = 0.0;
+    keep public function preStep(dt:Float):Bool {
+        assert(false,"preStep not overriden");
+        return false;
+    }
+    keep public function applyImpulseVel() {
+        assert(false,"applyImpulseVel not overriden");
+        return false;
+    }
+    keep public function applyImpulsePos() {
+        assert(false,"applyImpulsePos not overriden");
+        return false;
+    }
+
+    public function wake() {
+        if(space!=null)
+            space.wake_constraint(this);
+    }
+
+    public function draw(g:Debug) {}
+
+    //----------------------------------------------------------------------------------------------
+
+    //extra funky fields used in copying Compounds
+    //so as to be able to resolve any dangling references external to the Compound.
+    public function copy(dict:Array<PR(CopyHelper)>=null,todo:Array<PR(CopyHelper)>=null):Constraint { return null; }
+
+    public function copyto(ret:Constraint) {
+        var me = outer;
+
+        for(cb in me.cbTypes) ret.cbTypes.add(cb);
+
+        ret.removeOnBreak = me.removeOnBreak;
+        ret.breakUnderError = me.breakUnderError;
+        ret.breakUnderForce = me.breakUnderForce;
+        ret.maxError = me.maxError;
+        ret.maxForce = me.maxForce;
+        ret.damping = me.damping;
+        ret.frequency = me.frequency;
+        ret.stiff = me.stiff;
+        ret.ignore = me.ignore;
+        ret.active = me.active;
+    }
+}
+
+class PR(CopyHelper) {
+    public var id:Int = 0;
+    public var bc:Body = null;
+    public var cb:Body->Void = null;
+
+    function new() {}
+    public static function dict(id:Int,bc:Body) {
+        var ret = new PR(CopyHelper)();
+        ret.id = id;
+        ret.bc = bc;
+        return ret;
+    }
+    public static function todo(id:Int,cb:Body->Void) {
+        var ret = new PR(CopyHelper)();
+        ret.id = id;
+        ret.cb = cb;
+        return ret;
+    }
+}
+
+$(mixin global withConstraint(block)
+
+    //assume dict/todo exist
+    $(mixin copybody(to,body,dict,todo) {
+        if(dict!=null && body!=null) {
+            assert(todo!=null,"dict non-null,but todo is in constraint copy?");
+            var b:Body = null;
+            for(idc in dict) {
+                if(idc.id == body.id) {
+                    b = idc.bc;
+                    break;
+                }
+            }
+            if(b!=null) to.body = b.pr(inner);
+            else todo.push(PR(CopyHelper).todo(body.id, function (b:Body) to.body=b.pr(inner)));
+        }
+    });
+
+    $(mixin anchor_init(n) {
+        vec_set(n`local,0,0);
+        vec_set(n`rel,0,0);
+    });
+
+    $(mixin anchor_new(n) anchor_new(n,$(->)));
+    $(mixin anchor_new(n,extra)
+        vec_new(public,n`local);
+        vec_new(public,n`rel);
+
+        //were previously lambdas
+        private function validate_`n() {
+            vec_set(wrap_`n.pr(inner).,n`local);
+        }
+        private function invalidate_`n(x:PR(Vec2)) {
+            immutable_midstep("Constraint::"+$str(n));
+            vec_set(n`local,x.);
+            extra
+            wake();
+        }
+
+        public function setup_`n() {
+            wrap_`n = Vec2.get(n`localx,n`localy);
+            wrap_`n.pr(inner)._inuse = true;
+            wrap_`n.pr(inner)._validate = validate_`n;
+            wrap_`n.pr(inner)._invalidate = invalidate_`n;
+        }
+        public var wrap_`n:Vec2 = null
+    );
+
+    $(mixin wrap_anchor_new(N,n)
+        property(N,Vec2,{
+            if(pr(inner_zn).wrap_`n==null) pr(inner_zn).setup_`n();
+            return pr(inner_zn).wrap_`n;
+        },{
+            Disposed(N,Vec2);
+            DEBUG(if(N==null) throw "Error: Constraint::"+$str(N)+" cannot be null";)
+            this.N.set(N);
+        })
+    );
+
+    $(mixin validate_anchor(b,n) vec_rotate(n`local,b.axis,n`rel));
+
+    //-----------------------------------------------------------
+
+    $(mixin wrap_body_new(B,b, new)
+        property(B,Null<Body>, {
+            return if(pr(inner_zn).b==null) null else pr(inner_zn).b.outer;
+        }, {
+            pr(inner).immutable_midstep("Constraint::"+$str(B));
+            var in`B = if(B==null) null else B.pr(inner);
+            if(in`B != pr(inner_zn).b) {
+                if(pr(inner_zn).b != null) {
+                    if(space!=null && new(pr(inner_zn).b)) {
+                        inactive_body(pr(inner_zn).b, this.pr(inner));
+                    }
+
+                    if(active && space!=null)
+                        pr(inner_zn).b.wake(); //wake old object!
+                }
+                pr(inner_zn).b = in`B;
+                if(space!=null && in`B != null && new(in`B)) {
+                    active_body(in`B,this.pr(inner));
+                }
+
+                //must wake both.
+                //it's possible that constraint is woken, but the newly assigned body is not.
+                //equally it's possible constraint is not woken, but the newly assigned body is!
+                if(active && space!=null) {
+                    pr(inner).wake();
+                    if(in`B!=null) in`B.wake();
+                }
+            }
+        })
+    );
+
+    $(mixin active_body(b) active_body(b,this));
+    $(mixin active_body(b,this) {
+        if(b!=null) b.constraints.add(this);
+    });
+
+    $(mixin inactive_body(b) inactive_body(b,this));
+    $(mixin inactive_body(b,this) {
+        if(b!=null) b.constraints.remove(this);
+    });
+
+    //-----------------------------------------------------------
+
+    //return value is scaling for mass.
+    //                 {--- in ---}  {---- out ----}
+    $(mixin soft_gamma(freq,damping,dt, gamma,biasCoef) {
+        var omega = 2*Math.PI*freq;
+        gamma = 1/(dt*omega*(2*damping+omega*dt));
+        var ig = 1/(1+gamma);
+
+        biasCoef = dt*omega*omega*gamma;
+        gamma *= ig;
+        ig;
+    });
+
+    //-----------------------------------------------------------
+
+    $(mixin accum(jAcc,j, constraint) {
+        assert(!assert_isNaN(j),"accum nan");
+        var jOld = jAcc;
+        jAcc += j;
+        constraint;
+        j = jAcc-jOld;
+    });
+    $(mixin accum2(jAcc,j, constraint) {
+        vec_new(jOld); vec_set(jOld,jAcc);
+        vec_addeq(jAcc,j);
+        constraint;
+        vec_sub(jAcc,jOld,j);
+    });
+    $(mixin accum3(jAcc,j, constraint) {
+        vec3_new(jOld); vec3_set(jOld,jAcc);
+        vec3_addeq(jAcc,j);
+        constraint;
+        vec3_sub(jAcc,jOld,j);
+    });
+
+    //-----------------------------------------------------------
+
+    $(mixin bias_xform(body,loc,rel) {
+        vec_rotate(loc,body.axis,rel);
+    });
+    $(mixin bias_xform(body,loc,rel,glob) {
+        bias_xform(body,loc,rel);
+        vec_add(body.pos,rel,glob);
+    });
+
+    block
+);

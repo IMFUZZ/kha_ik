@@ -1,0 +1,23 @@
+package nape.dynamics;
+$(import);
+
+!!/**
+!! * Enumeration of Arbiter types.
+!! */
+Flags(ArbiterType,
+    !!/**
+    !! * Collision type Arbiter.
+    !! */
+    prop(COLLISION,1)
+
+    !!/**
+    !! * Sensor type Arbiter.
+    !! */
+    prop(SENSOR,2)
+
+    !!/**
+    !! * Fluid type Arbiter.
+    !! */
+    prop(FLUID,4)
+)
+

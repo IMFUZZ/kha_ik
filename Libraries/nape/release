@@ -1,0 +1,212 @@
+#!/bin/bash
+
+WORKING=".version.cur"
+
+if [ ! -e $WORKING ]
+then
+	cp version $WORKING
+fi
+
+function read {
+	MAJOR=`sed -n '1p' $WORKING`
+	MINOR=`sed -n '2p' $WORKING`
+	REVISION=`sed -n '3p' $WORKING`
+	DATETIME=`sed -n '4p' $WORKING`
+}
+read
+
+function write {
+	echo $MAJOR > $WORKING
+	echo $MINOR >> $WORKING
+	echo $REVISION >> $WORKING
+	echo $DATETIME >> $WORKING
+}
+
+function cver {
+	CVERSION="$MAJOR.$MINOR"
+	if [ "$REVISION" != 0 ]
+	then
+		CVERSION="$CVERSION \"r$REVISION\" $DATETIME"
+	fi
+}
+
+if [ "$1" = 'reset' ]
+then
+	cp version $WORKING
+	read
+
+	cver
+	echo " >> now at $CVERSION"
+elif [ "$1" = 'incminor' ]
+then
+	MINOR=$((MINOR+1))
+	REVISION=0
+	DATETIME=""
+	write
+
+	cver
+	echo " >> now at $CVERSION"
+elif [ "$1" = 'inc' ]
+then
+	MAJOR=$((MAJOR+1))
+	MINOR=1
+	REVISION=0
+	DATETIME=""
+	write
+
+	cver
+	echo " >> now at $CVERSION"
+
+	exit
+elif [ "$1" = 'make' ]
+then
+	oldREVISION=$REVISION
+	oldDATETIME=$DATETIME
+
+	REVISION=$((REVISION+1))
+	DATETIME=`date +"%d/%m/%y %H:%M"`
+	write
+
+	echo ""
+	echo "------------------------------------------------------------------------------"
+	echo " >> Checking libraries compile (exec 'make release') "
+	echo "------------------------------------------------------------------------------"
+	echo ""
+
+	make release
+	success=$?
+	if [ "$success" = "0" ]
+	then
+		#check demoes all compile
+		echo ""
+		echo "------------------------------------------------------------------------------"
+		echo " >> Checking demoes all compile (exec './demo/testrun') "
+		echo "------------------------------------------------------------------------------"
+		echo ""
+
+		cd demo
+		./testrun
+		success=$?
+		cd ../
+	fi
+
+	if [ "$success" = "0" ]
+	then
+		#check unit tests pass
+		echo ""
+		echo "------------------------------------------------------------------------------"
+		echo " >> Checking unit tests still pass (exec './unit/testrun')"
+		echo "------------------------------------------------------------------------------"
+		echo ""
+
+		cd unit
+		./testrun
+		success=$?
+		cd ../
+	fi
+
+	if [ "$success" != "0" ]
+	then
+		echo ""
+		echo " >> FAILURE"
+
+		REVISION=$oldREVISION
+		DATETIME=$oldDATETIME
+		write
+	else
+		make tar
+
+		cver
+		echo ""
+		echo "------------------------------------------------------------------------------"
+		echo " >> now at $CVERSION"
+		echo "------------------------------------------------------------------------------"
+		echo ""
+		cp $WORKING version
+
+		#copy over demo docs stuff
+		echo ""
+		echo "------------------------------------------------------------------------------"
+		echo " >> copying demo doc shiz (exec './demo/gendocs')"
+		echo "------------------------------------------------------------------------------"
+		echo ""
+		cd demo
+		./gendocs
+		cd ../
+
+		#rebuild docs fully (to have proper links)
+		echo ""
+		echo "------------------------------------------------------------------------------"
+		echo " >> rebuilding docs for changes to demoes and index"
+		echo "         (exec './doc-gen/make build && ./doc-gen/make run')"
+		echo "------------------------------------------------------------------------------"
+		echo ""
+		cd doc-gen
+		make build
+		make run
+		cd ../
+
+		#ftp shiz
+		echo ""
+		echo "------------------------------------------------------------------------------"
+		echo " >> starting ftp transfers to deltaluca.me.uk"
+		echo "------------------------------------------------------------------------------"
+		echo ""
+		ftp -n -v deltaluca.me.uk << EOT
+user luca $PASS
+prompt
+cd public_html/docnew/
+lcd doc-gen/doc/
+put index.php
+cd swf
+lcd swf
+mput *
+
+exit
+EOT
+
+		echo " server remotes <<< "
+		make server-release
+
+		#haxelib
+		echo ""
+		echo "--------------------------------------------------------------------------"
+		echo " >> haxelib"
+		echo "--------------------------------------------------------------------------"
+		echo ""
+		cd src
+			read -e -p "haxelib message:
+> " haxelibmsg
+			cat > haxelib.xml << EOT
+<project name="nape" url="https://github.com/deltaluca/nape" license="BSD">
+	<user name="deltaluca"/>
+	<tag v="cross"/>
+	<tag v="game"/>
+	<description>Nape 2D Physics engine</description>
+	<version name="m$MAJOR.$MINOR-r$REVISION">$haxelibmsg</version>
+</project>
+EOT
+			rm napelib.zip
+			zip -r napelib .
+			haxelib submit napelib.zip
+		cd ../
+
+		rm $WORKING
+
+	fi
+
+	exit
+elif [ "$1" = 'version' ]
+then
+	cver
+	echo $CVERSION
+	exit
+else
+	echo "Script for working with public releases of nape for development"
+	echo " >> 'version' to query current public version"
+	echo " >> 'incminor' to increment minor version (reset revision to 1)"
+	echo " >> 'inc' to increment major version (reset minor to 1)"
+	echo " >> 'make' to run 'make release' aswell as incrementing revision and performing ftp work"
+	echo " >> 'reset' to undo staged changes"
+	exit
+fi

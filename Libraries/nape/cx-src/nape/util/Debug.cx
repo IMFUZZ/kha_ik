@@ -1,0 +1,526 @@
+package nape.util;
+$(import);
+
+!!/**
+!! * Debug class providing general utilities
+!! * <br/><br/>
+!! * Also serves as the base type for Debug draws.
+!! */
+class Debug {
+    !!/**
+    !! * Query Nape version
+    !! */
+    public static function version() {
+        return "Nape 2.0.19";
+    }
+
+    !!/**
+    !! * Force clear all object pools, both internal and public.
+    !! */
+    public static function clearObjectPools() {
+        $(expand global CLEARITERATOR(T) {
+            while(T.pr(pool)!=null) {
+                var nxt = T.pr(pool).pr(next);
+                T.pr(pool).pr(next) = null;
+                T.pr(pool) = nxt;
+            }
+        });
+        $(expand global CLEARPOOL(T) {
+            while(T.pr(pool)!=null) {
+                var nxt = T.pr(pool).next;
+                T.pr(pool).next = null;
+                T.pr(pool) = nxt;
+            }
+            #if NAPE_POOL_STATS
+                T.POOL_TOT = T.POOL_CNT = T.POOL_ADDNEW = T.POOL_ADD = T.POOL_SUB = 0;
+            #end
+        });
+        $(expand global PUBCLEARPOOL(T) {
+            while(PR(PubPool).pool`T!=null) {
+                var nxt = PR(PubPool).pool`T.pr(pool);
+                PR(PubPool).pool`T.pr(pool) = null;
+                PR(PubPool).pool`T = nxt;
+            }
+            #if NAPE_POOL_STATS
+                T.POOL_TOT = T.POOL_CNT = T.POOL_ADDNEW = T.POOL_ADD = T.POOL_SUB = 0;
+            #end
+        });
+    }
+
+    #if NAPE_TIMES
+        static public var ltime = 0;
+        static public function TIMES(space:Space) {
+            var text = "";
+            var dt = space.timeStamp - ltime;
+        text += "Validation:    "+Std.string(Debug.VALID/dt).substr(0,5)+"ms\n";
+            text += "Broadphase:    "+Std.string((Debug.BROAD-Debug.NARROW)/dt).substr(0,5)+"ms :: total = "+Std.string(Debug.BROAD/dt).substr(0,5)+"ms\n";
+            text += "Narrowphase:   "+Std.string(Debug.NARROW/dt).substr(0,5)+"ms\n";
+            text += "Set-Forest:    "+Std.string(Debug.FOR/dt).substr(0,5)+"ms\n";
+            text += "Prestep:       "+Std.string(Debug.PRE/dt).substr(0,5)+"ms\n";
+            text += "Contact sort:  "+Std.string(Debug.SORT/dt).substr(0,5)+"ms\n";
+            text += "Position It.:  "+Std.string(Debug.POS/dt).substr(0,5)+"ms\n";
+            text += "Velocity It.:  "+Std.string(Debug.VEL/dt).substr(0,5)+"ms\n";
+            text += "Debug Draw:    "+Std.string(Debug.DRAW/dt).substr(0,5)+"ms\n";
+            text += "\n";
+            text += "arb:        "+Debug.ACNT+"\n";
+            text += "active arb: "+Debug.AACNT+"\n";
+            text += "con:        "+Debug.CCNT+"\n";
+            text += "active con: "+Debug.ACCNT+"\n";
+            text += "\n";
+            text += "hash collisions: "+Std.string(Debug.HASH/Debug.HASHT*100).substr(0,5)+"%\n";
+            text += "\n";
+            text += "Broadphase adjustments: "+Std.string(BROADCLASH/BROADTOTAL*100).substr(0,5)+"%\n";
+
+            if(space.timeStamp-ltime > 50) {
+                Debug.FOR = Debug.BROAD = Debug.PRE = Debug.POS = Debug.VEL = Debug.DRAW = Debug.VALID = Debug.SORT = Debug.NARROW = Debug.BROADCLASH = Debug.BROADTOTAL = 0;
+                ltime = space.timeStamp;
+            }
+
+            return text;
+        }
+
+        static public var ACNT = 0;
+        static public var AACNT = 0;
+        static public var CCNT = 0;
+        static public var ACCNT = 0;
+
+        static public var FOR = 0;
+        static public var PRE = 0;
+        static public var VEL = 0;
+        static public var POS = 0;
+        static public var BROAD = 0;
+        static public var NARROW = 0;
+        static public var DRAW = 0;
+        static public var VALID = 0;
+        static public var SORT = 0;
+
+        static public var HASH = 0;
+        static public var HASHT = 0;
+
+        static public var BROADCLASH = 0;
+        static public var BROADTOTAL = 0;
+    #end
+
+    #if (flash9||openfl||nme)
+
+    !!/**
+    !! * Create a flash/openfl||nme Shape representing the given Body.
+    !! *
+    !! * @param body The body to create display Shape for.
+    !! * @return A flash/openfl||nme.display.Shape representing Body.
+    !! * @throws # If body is null.
+    !! */
+    keep public static function createGraphic(body:Body):flash.display.Shape {
+        DEBUG(if(body==null) throw "Error: Cannot create debug graphic for null Body";)
+        var ret = new flash.display.Shape();
+        var graphics = ret.graphics;
+
+        var idc:Int = fastint(0xffffff*Math.exp(-body.id/1500));
+        var _r = (((idc&0xff0000)>>16))*0.7;
+        var _g = (((idc&0xff00)>>8))*0.7;
+        var _b = (idc&0xff)*0.7;
+
+        var col = ((fastint(_r))<<16)|((fastint(_g))<<8)|(fastint(_b));
+        graphics.lineStyle(0.1,col,1);
+
+        for(s in body.shapes) {
+            if(s.isCircle()) {
+                var c = s.castCircle;
+                graphics.drawCircle(c.localCOM.x,c.localCOM.y,c.radius);
+            } else {
+                var p = s.castPolygon;
+                graphics.moveTo(s.localCOM.x,s.localCOM.y);
+                for(i in 0...p.worldVerts.length) {
+                    var px = p.localVerts.at(i);
+                    graphics.lineTo(px.x,px.y);
+                }
+                var px = p.localVerts.at(0);
+                graphics.lineTo(px.x,px.y);
+            }
+
+            if(s.isCircle()) {
+                var c = s.castCircle;
+                graphics.moveTo(c.localCOM.x+c.radius*0.3,c.localCOM.y);
+                graphics.lineTo(c.localCOM.x+c.radius,c.localCOM.y);
+            }
+        }
+
+        return ret;
+    }
+
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner):PR(Debug) = null;
+
+    !!/**
+    !! * If true, a representation of contact patches will be drawn.
+    !! * <br/><br/>
+    !! * Only active arbiters are drawn.
+    !! * @default false
+    !! */
+    public var drawCollisionArbiters:Bool = false;
+    !!/**
+    !! * If true, a representation of centres of buoyancy and overlap will be drawn.
+    !! * <br/><br/>
+    !! * Only active arbiters are drawn.
+    !! * @default false
+    !! */
+    public var drawFluidArbiters:Bool = false;
+    !!/**
+    !! * If true, a representation of sensor interactions will be drawn.
+    !! * <br/><br/>
+    !! * Only active arbiters are drawn.
+    !! * @default false
+    !! */
+    public var drawSensorArbiters:Bool = false;
+
+    !!/**
+    !! * If true, then all bodies in the space (whether active or not) will be drawn.
+    !! * @default true
+    !! */
+    public var drawBodies:Bool = false;
+    !!/**
+    !! * If true, then things like the body centre of mass, and bouncing box will be drawn.
+    !! * <br/><br/>
+    !! * This will only have an effect if drawBodies is true.
+    !! * @default false
+    !! */
+    public var drawBodyDetail:Bool = false; //requires drawBodies
+    !!/**
+    !! * If true, then things like shape centre of mass and bounding box will be drawn.
+    !! * <br/><br/>
+    !! * This will only have an effect if drawBodies is true.
+    !! * @default false
+    !! */
+    public var drawShapeDetail:Bool = false; //requires drawBodies
+    !!/**
+    !! * If true, then indicators of the shapes rotation will be drawn.
+    !! * <br/><br/>
+    !! * This will only have an effect if drawBodies is true.
+    !! * @default true
+    !! */
+    public var drawShapeAngleIndicators:Bool = false; //requires drawBodies
+
+    !!/**
+    !! * If true, then representations of the active constraints will be drawn.
+    !! * @default false
+    !! */
+    public var drawConstraints:Bool = false;
+
+    !!/**
+    !! * Background colour for debug draw display.
+    !! * <br/><br/>
+    !! * This value does not have much use for ShapeDebug, or for
+    !! * a transparent BitmapDebug but will still be used in tinting
+    !! * object colours to better fit an idealised background colour.
+    !! */
+    property(bgColour,Int,{
+        return pr(inner).bg_col;
+    },{
+        #if flash10
+            if(pr(inner).isbmp) pr(inner).d_bmp.setbg(bgColour);
+            else                pr(inner).d_shape.setbg(bgColour);
+        #else
+            pr(inner).d_shape.setbg(bgColour);
+        #end
+    })
+
+    !!/**
+    !! * User defined colour picking.
+    !! * <br/><br/>
+    !! * When not null, this method will be called to decide which colour
+    !! * to use for an object with argument being the id of that object.
+    !! * <br/><br/>
+    !! * The return value should be an RGB value.
+    !! *
+    !! * @default null
+    !! */
+    public var colour:Null<Int->Int> = null;
+
+    !!/**
+    !! * @private
+    !! */
+    public function new() {
+        DEBUG(
+            if(!PR(Debug).internal)
+                throw "Error: Cannot instantiate Debug derp! Use ShapeDebug, or BitmapDebug on flash10+";
+        )
+
+        drawCollisionArbiters = false;
+        drawFluidArbiters = false;
+        drawSensorArbiters = false;
+        drawBodies = true;
+        drawShapeAngleIndicators = true;
+        drawBodyDetail = false;
+        drawShapeDetail = false;
+        drawConstraints = false;
+
+        cullingEnabled = false;
+
+        colour = null;
+    }
+
+    !!/**
+    !! * The flash/openfl||nme native display object representing debug draw.
+    !! * <br/><br/>
+    !! * When using debug drawer, you should add this to your display list.
+    !! */
+    property(display, flash.display.DisplayObject, {
+        #if flash10
+            var ret:flash.display.DisplayObject;
+            if(pr(inner).isbmp) ret = pr(inner).d_bmp.bitmap;
+            else                ret = pr(inner).d_shape.shape;
+            return ret;
+        #else
+            return pr(inner).d_shape.shape;
+        #end
+    })
+
+    !!/**
+    !! * When true, objects outside the debug draw screen will not be drawn.
+    !! * <br/><br/>
+    !! * The debug draw screen is defined as the rectangle (0,0) -> (width,height).
+    !! * To 'move' the debug draw screen in your world, you should modify the transform
+    !! * property.
+    !! * <br/><br/>
+    !! * This culling has a cost, so is not worth enabling if everything is always on
+    !! * screen anyways.
+    !! *
+    !! * @default false
+    !! */
+    public var cullingEnabled:Bool = false;
+
+    !!/**
+    !! * Transformation to apply to all debug draw operations.
+    !! * <br/><br/>
+    !! * This transform can be used to 'move' the debug draw screen through your
+    !! * world as well as rotating and zooming in etc.
+    !! * <br/><br/>
+    !! * This transform effects 'all' debug draw operations and optimisation is in
+    !! * place to not perform any transformation if matrix is the identity matrix.
+    !! *
+    !! * @default new Mat23()
+    !! */
+    property(transform, Mat23, {
+        if(pr(inner).xform==null) pr(inner).setform();
+        return pr(inner).xform.outer;
+    }, {
+        DEBUG(if(transform==null) throw "Error: Cannot set Debug::transform to null";)
+        this.transform.set(transform);
+    })
+
+    !!/**
+    !! * Clear the debug view.
+    !! */
+    public function clear():Void {}
+
+    !!/**
+    !! * Flush any pending draw operations to debug view.
+    !! * <br/><br/>
+    !! * This operation is not needed for ShapeDebug at present.
+    !! */
+    public function flush():Void {}
+
+    !!/**
+    !! * Draw a Nape object to debug draw.
+    !! * <br/><br/>
+    !! * Possible argument types are: <code>Space, Compound, Body, Shape, Constraint</code>
+    !! * <br/><br/>
+    !! * To draw a Shape it must be part of a Body.
+    !! * <br/><br/>
+    !! * Debug draw settings like 'drawBodies' are overriden by a direct call to draw
+    !! * with a Body or Shape. Equally even if drawConstraints is false, should
+    !! * you call draw with a Constraint object directly it will be drawn regardless.
+    !! *
+    !! * @param object The object to draw.
+    !! * @throws # If object is null or not of the expected Type.
+    !! */
+    public function draw(object:Dynamic):Void {}
+
+    !!/**
+    !! * Draw a line segment.
+    !! * <br/><br/>
+    !! * This line will be drawn with no thickness.
+    !! *
+    !! * @param start The start point of line segment.
+    !! * @param end   The end point of line segment.
+    !! * @param colour The colour of line in RGB.
+    !! * @throws # If either start or end are null or disposed of.
+    !! */
+    public function drawLine  (start:Vec2, end:Vec2, colour:Int):Void {}
+
+    !!/**
+    !! * Draw quadratic bezier curve.
+    !! * <br/><br/>
+    !! * This curve will be drawn with no thickness.
+    !! *
+    !! * @param start The start point of curve.
+    !! * @param control The control point for curve.
+    !! * @param end The end point of curve.
+    !! * @param colour The colour of curve in RGB.
+    !! * @throws # If any Vec2 argument is null or disposed of.
+    !! */
+    public function drawCurve (start:Vec2, control:Vec2, end:Vec2, colour:Int):Void {}
+
+    !!/**
+    !! * Draw circle.
+    !! * <br/><br/>
+    !! * This circle will be drawn with no thickness or fill.
+    !! *
+    !! * @param position The position of circle centre.
+    !! * @param radius The radius of the circle.
+    !! * @param colour The colour of circle in RGB.
+    !! * @throws # If position is null or disposed of.
+    !! * @throws # If radius is negative.
+    !! * @throws # If transform is not equiorthogonal.
+    !! */
+    public function drawCircle(position:Vec2, radius:Float, colour:Int):Void {}
+
+    !!/**
+    !! * Draw AABB.
+    !! * <br/><br/>
+    !! * This AABB will be drawn with no thickness or fill.
+    !! *
+    !! * @param aabb The AABB to draw.
+    !! * @param colour The colour to draw AABB with in RGB.
+    !! * @throws # If AABB is null.
+    !! */
+    public function drawAABB  (aabb:AABB, colour:Int):Void {}
+
+    !!/**
+    !! * Draw filled triangle.
+    !! * <br/><br/>
+    !! * This triangle will be drawn with no edges, only a solid fill.
+    !! *
+    !! * @param p0 The first point in triangle.
+    !! * @param p1 The second point in triangle.
+    !! * @param p2 The third point in triangle.
+    !! * @param colour The colour to draw triangle with in RGB.
+    !! * @throws # If any point argument is null or disposed of.
+    !! */
+    public function drawFilledTriangle(p0:Vec2, p1:Vec2, p2:Vec2, colour:Int):Void {}
+
+    !!/**
+    !! * Draw filled circle.
+    !! * <br/><br/>
+    !! * This circle will be drawn with no edges, only a solid fill.
+    !! *
+    !! * @param position The position of centre of circle.
+    !! * @param radius The radius of circle.
+    !! * @param colour The colour to draw circle with in RGB.
+    !! * @throws # If position is null or disposed of.
+    !! * @throws # If radius is negative.
+    !! * @throws # If transform is not equiorthogonal.
+    !! */
+    public function drawFilledCircle(position:Vec2, radius:Float, colour:Int):Void {}
+
+    !!/**
+    !! * Draw polygon.
+    !! * <br/><br/>
+    !! * This polygon will be drawn with no thickness or fill.
+    !! * <br/><br/>
+    !! * The polygon argument is typed Dynamic and may be one of:
+    !! * <code>Array&lt;Vec2&gt;, flash.Vector&lt;Vec2&gt;, Vec2List, GeomPoly</code>
+    !! *
+    !! * @param polygon The polygon to draw.
+    !! * @param colour The colour to draw polygon with in RGB.
+    !! * @throws # If polygon is null, or not of expected type.
+    !! * @throws # If polygon contains disposed Vec2.
+    !! */
+    public function drawPolygon (polygon:Dynamic, colour:Int):Void {}
+
+    !!/**
+    !! * Draw filled polygon.
+    !! * <br/><br/>
+    !! * This polygon will be drawn no edges, only a solid fill.
+    !! * <br/><br/>
+    !! * The polygon argument is typed Dynamic and may be one of:
+    !! * <code>Array&lt;Vec2&gt;, flash.Vector&lt;Vec2&gt;, Vec2List, GeomPoly</code>
+    !! *
+    !! * @param polygon The polygon to draw.
+    !! * @param colour The colour to draw polygon with in RGB.
+    !! * @throws # If polygon is null, or not of expected type.
+    !! * @throws # If polygon contains disposed Vec2.
+    !! */
+    public function drawFilledPolygon (polygon:Dynamic, colour:Int):Void {}
+
+    !!/**
+    !! * Draw linear spring.
+    !! * <br/><br/>
+    !! * This spring will be drawn with no thickness.
+    !! *
+    !! * @param start The start point of spring.
+    !! * @param end The end point of spring.
+    !! * @param colour The colour of spring in RGB.
+    !! * @param coils The number of coils in spring. (default 3)
+    !! * @param radius The radius of spring. (default 3.0)
+    !! * @throws # If start or end are either null or disposed of.
+    !! * @throws # If number of coils is negative.
+    !! */
+    public function drawSpring(start:Vec2,end:Vec2,colour:Int,coils=3,radius=3.0):Void {}
+
+    #end
+}
+
+///_________________________________________________________________________________________________
+///¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+
+$(mixin global __debug_draw(obj) {
+    DEBUG(if(pr(inner).xform!=null && !pr(inner).xform.outer.equiorthogonal()) throw "Error: Debug draw can only operate with an equiorthogonal transform!";)
+
+    if(pr(inner).xnull) {
+        if  (Stdis(obj,Space))      pr(inner_zn).draw_space(cast(obj,Space      ).pr(inner), null,1.0,true);
+        elif(Stdis(obj,Compound))   pr(inner_zn).draw_compound(cast(obj,Compound).pr(inner), null,1.0,true);
+        elif(Stdis(obj,Body ))      pr(inner_zn).draw_body (cast(obj,Body       ).pr(inner), null,1.0,true);
+        elif(Stdis(obj,Shape))      pr(inner_zn).draw_shape(cast(obj,Shape      ).pr(inner), null,1.0,true);
+        elif(Stdis(obj,Constraint)) cast(obj,Constraint).pr(inner).draw(this);
+        else { DEBUG(throw "Error: Unhandled object type for Debug draw";) }
+    }else {
+        if  (Stdis(obj,Space))      pr(inner_zn).draw_space(cast(obj,Space     ).pr(inner), pr(inner).xform,pr(inner).xdet,false);
+        elif(Stdis(obj,Body ))      pr(inner_zn).draw_body (cast(obj,Body      ).pr(inner), pr(inner).xform,pr(inner).xdet,false);
+        elif(Stdis(obj,Shape))      pr(inner_zn).draw_shape(cast(obj,Shape     ).pr(inner), pr(inner).xform,pr(inner).xdet,false);
+        elif(Stdis(obj,Constraint)) cast(obj,Constraint).pr(inner).draw(this);
+        else { DEBUG(throw "Error: Unhandled object type for Debug draw";) }
+    }
+
+});
+
+$(mixin global __debug_spring(start,end,colour,coils,radius) {
+    Disposed(start,Vec2)
+    Disposed(end,Vec2)
+    DEBUG(if(start==null) throw "Error: drawCurve::start cannot be null";)
+    DEBUG(if(end==null) throw "Error: drawCurve::end cannot be null";)
+    DEBUG(if(coils<0) throw "Error: drawCurve::coils must be >= 0";)
+
+    if(coils==0) drawLine(start,end,colour);
+    else {
+        vec_new(d, end.x-start.x, end.y-start.y);
+        vec_diveq(d,coils*4);
+
+        vec_new(n); vec_set(n,d);
+        if(vec_lsq(n)<0.1) return;
+        vec_normal(n); vec_muleq(n,radius*2);
+
+        var u = start.copy();
+        var v = Vec2.get();
+        var q = Vec2.get();
+        for(i in 0...coils) {
+            v.x = u.x + dx + nx; v.y = u.y + dy + ny;
+            q.x = u.x + dx*2;    q.y = u.y + dy*2;
+            drawCurve(u,v,q,colour);
+            u.x = q.x; u.y = q.y;
+
+            v.x = u.x + dx - nx; v.y = u.y + dy - ny;
+            q.x = u.x + dx*2;    q.y = u.y + dy*2;
+            drawCurve(u,v,q,colour);
+            u.x = q.x; u.y = q.y;
+        }
+        u.dispose();
+        v.dispose();
+        q.dispose();
+    }
+
+    WEAK(start);
+    WEAK(end);
+});

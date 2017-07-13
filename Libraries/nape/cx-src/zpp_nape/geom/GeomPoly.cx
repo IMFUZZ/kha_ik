@@ -1,0 +1,370 @@
+package zpp_nape.geom;
+$(import);
+
+// caxe only typedef.
+$(mixin Vertex() PR(GeomVert));
+
+//
+// Private GeomPoly vertex
+//
+
+class Vertex {
+    // x,y properties
+    vec_new(public, $(->));
+
+    // previous and next vertices in geometric polygon
+    // ALWAYS non-null (cyclic).
+    public var prev:Vertex = null;
+    public var next:Vertex = null;
+
+    // Reference to public Vec2 linked to this vertex.
+    // Access it with 'wrapper' to construct lazily.
+    public var wrap:Null<Vec2> = null;
+
+    // when true this vertex will not be removed by simplification algorithms
+    public var forced:Bool = false;
+
+    // Object pool implementors
+    MixPoolNoNext(Vertex)
+    public inline function free():Void {
+        if (wrap != null) {
+            wrap.pr(inner)._inuse = false;
+            wrap.dispose();
+            wrap = null;
+        }
+        prev = next = null;
+    }
+    public inline function alloc():Void {
+        forced = false;
+    }
+
+    // Function to access and lazily construct public warpped Vec2
+    public inline function wrapper():Vec2 {
+        if (wrap==null) {
+            wrap = Vec2.get(x,y);
+            wrap.pr(inner)._inuse = true;
+            wrap.pr(inner)._invalidate = modwrap;
+            wrap.pr(inner)._validate = getwrap;
+        }
+
+        return wrap;
+    }
+    public inline function modwrap(n:PR(Vec2)):Void {
+        vec_set(this.,n.);
+    }
+    public inline function getwrap():Void {
+        vec_set(wrap.pr(inner).,this.);
+    }
+
+    // Function to be used to construct a Vertex so that object pool
+    // is automaticaly used. Constructor should 'not' be used here.
+    public static inline function get(x:Float, y:Float):Vertex {
+        var ret; Get(Vertex, ret);
+        vec_set(ret., $(->));
+        return ret;
+    }
+    public function new() {}
+}
+
+//
+// Simple internal geompoly with refernce to circular linked list of vertices.
+//
+
+class PR(GeomPoly) {
+    public var outer:GeomPoly = null;
+    public var vertices:Null<Vertex> = null;
+
+    public function new(outer:GeomPoly) {
+        this.outer = outer;
+    }
+}
+
+//
+// Internal object for GeomVertexIterator
+//
+
+class PR(GeomVertexIterator) {
+
+    // pointer to current vertex in polygon
+    public var ptr:Vertex = null;
+    // pointer to the first vertex of iteration
+    // (required for termination)
+    // and flag to denote we still need to visit it.
+    public var start:Vertex = null;
+    public var first:Bool = false;
+
+    // direction of iteration.
+    public var forward:Bool = false;
+
+    public var outer:GeomVertexIterator = null;
+
+    // Object pool implementors
+    MixPool(PR(GeomVertexIterator))
+    flibmdel public inline function free():Void {
+        outer.pr(inner) = null;
+        ptr = start = null;
+    }
+    flibmdel public inline function alloc() {
+    }
+
+    DEBUG(
+        // Debug only field to catch improper use of GeomVertexIterator
+        // constructor by a user.
+        public static var internal = false;
+    )
+    function new() {
+        DEBUG(internal = true;)
+        outer = new GeomVertexIterator();
+        DEBUG(internal = false;)
+    }
+
+    // Function to be used to construct this object so that object pool can be
+    // automaticaly used.
+    public static function get(poly:PR(GeomVert), forward:Bool) {
+        var ret; Get(PR(GeomVertexIterator), ret);
+        ret.outer.pr(inner) = ret;
+        ret.ptr = poly;
+        ret.forward = forward;
+        ret.start = poly;
+        ret.first = poly != null;
+        return ret.outer;
+    }
+}
+
+//
+// Geometric environment to be used for working on private geometric polygons
+// Reason simply being that 'null' is a valid polygon! (the empty polygon)
+//
+$(mixin global geom(block)
+    block
+
+    // Sanitise polygon (As per PartitionedPoly and Polygon) careful to keep consistency
+    // in conditions for sanitation
+    $(mixin sanitise(vertices)
+    mix_circular(Vertex, ({
+        // strip equal vertices first
+        var p = vertices;
+        var skip = true;
+        while (skip || p != vertices) {
+            skip = false;
+            if (vec_dsq(p., p.next.) < (Config.epsilon * Config.epsilon)) {
+                //remove vertex 'p'
+                if (p == vertices) {
+                    vertices = p.next;
+                    skip = true;
+                }
+                if (p.forced) p.next.forced = true;
+                p = pop_ret_after(p);
+                if (p == null) {
+                    vertices = null;
+                    break;
+                }
+            }
+            else p = p.next;
+        }
+
+        if (vertices != null) {
+            // strip collinear vertices
+            // due to epsilon, may need more than one pass.
+            var removed;
+            do {
+                removed = false;
+                p = vertices;
+                skip = true;
+                while (skip || p != vertices) {
+                    skip = false;
+                    var pre = p.prev;
+                    vec_new(u); vec_sub(p., pre., u);
+                    vec_new(v); vec_sub(p.next., p. , v);
+                    var crs = vec_cross(u, v);
+                    if (crs * crs >= (Config.epsilon * Config.epsilon)) {
+                        //keep vertex
+                        p = p.next;
+                    }else
+                    {
+                        //remove vertex 'p'
+                        if (p == vertices) {
+                            vertices = p.next;
+                            skip = true;
+                        }
+                        p = pop_ret_after(p);
+                        removed = true;
+
+                        if (p == null) {
+                            removed = false;
+                            vertices = null;
+                            break;
+                        }
+                    }
+                }
+            }
+            while (removed);
+        }
+        /*return*/ (vertices == null);
+    })));
+
+    //
+    // Determine if polygon contains a point
+    // Using one sided ray casting.
+    //
+    // polygon -> Float -> Float -> Bool
+    $(mixin contains(poly, Xx, Yy) ({
+        var x = Xx;
+        var y = Yy;
+        var ret = false;
+
+        mix_circular(Vertex,
+            for_iter(p, poly,{
+                var q = p.prev;
+                if ((p.y < y && q.y >= y
+                 ||  q.y < y && p.y >= y)
+                 && (p.x <= x || q.x <= x)) {
+                    if ((p.x + (y - p.y) / (q.y - p.y) * (q.x - p.x)) < x) {
+                        ret = !ret;
+                    }
+                }
+            });
+        )
+
+        /*return*/ ret;
+    }));
+
+    //
+    // Produce clone of polygon.
+    //
+    // polygon -> polygon
+    $(mixin clone(poly) {
+        var ret:Vertex = null;
+        mix_circular(Vertex,
+            for_iter(p, poly,{
+                ret = push_after(ret, Vertex.get(p.x, p.y));
+            });
+        )
+        /*return*/ ret;
+    });
+
+    //
+    // Throw assertion if polygon is vertex-count-degenerate.
+    //
+    // polygon -> Void
+    $(mixin assert_size_3(poly) {
+        #if NAPE_ASSERT
+        mix_circular(Vertex,
+            if (size(poly) < 3) {
+                throw "Error: Method requires that polygon has atleast 3 vertices";
+            }
+        )
+        #end
+    });
+
+    //
+    // Compute signed area (positive for clockwise) of polygon
+    //
+    // polygon -> Float
+    $(mixin signed_area(poly) ({
+        assert_size_3(poly);
+
+        var area = 0.0;
+        mix_circular(Vertex,
+            for_iter(v, poly, {
+                area += v.x * (v.next.y - v.prev.y);
+            });
+        )
+        /*return*/ area*0.5;
+    }));
+
+    //
+    // Compute unsigned area of polygon.
+    //
+    // polygon -> Float
+    $(mixin area(poly) ({
+        var ret = signed_area(poly);
+        /*return*/ if (ret < 0) (-ret) else ret;
+    }));
+
+    //
+    // Determine if polygon is convex wound.
+    //
+    // polygon -> Bool
+    $(mixin clockwise(poly) ({
+        /*return*/ signed_area(poly) > 0.0;
+    }));
+
+    //
+    // Determine if polygon is degenerate in terms of vertex count and area.
+    //
+    // polygon -> Bool
+    $(mixin degenerate(poly) ({
+        if (poly == null
+         || poly.next == poly
+         || poly.next == poly.prev) {
+            /*return*/ true;
+        }
+        else {
+            var a = signed_area(poly);
+            /*return*/ (a * a) < (Config.epsilon * Config.epsilon);
+        }
+    }));
+
+    //
+    // Determine if polygon is convex
+    // Performed by checking that all turns are in the same direction.
+    //
+    // polygon -> Bool
+    $(mixin convex(poly) ({
+        assert_size_3(poly);
+
+        mix_circular(Vertex,
+            var neg = false;
+            var pos = false;
+            var ret = true;
+            for_iter(v, poly, {
+                var u = v.prev;
+                var w = v.next;
+
+                vec_new(a); vec_sub(w., v., a);
+                vec_new(b); vec_sub(v., u., b);
+
+                var dot = vec_cross(a, b);
+                if (dot > 0.0) {
+                    pos = true;
+                }
+                elif (dot < 0.0) {
+                    neg = true;
+                }
+
+                if (pos && neg) {
+                    ret = false;
+                    break;
+                }
+            });
+        )
+
+        /*return*/ ret;
+    }));
+
+    //
+    // strip equal vertices (degenerate edges).
+    // collinear ignored.
+    //
+    $(mixin strip_equal(poly) ({
+    mix_circular(Vertex,
+        var p = poly;
+        var skip = true;
+        while (poly != null && (skip || p != poly)) {
+            skip = false;
+            if (p.x == p.next.x && p.y == p.next.y)
+            {
+                //remove vertex 'p'
+                if (p == poly)
+                {
+                    poly = p.next == p ? null : p.next;
+                    skip = true;
+                }
+                p = pop_ret_after(p);
+            }
+            else
+                p = p.next;
+        }
+    )}));
+);

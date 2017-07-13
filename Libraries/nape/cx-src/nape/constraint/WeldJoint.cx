@@ -1,0 +1,160 @@
+package nape.constraint;
+$(import);
+
+withConstraint(
+!!/**
+!! * WeldJoint constraining two bodies to be exactly locked together.
+!! * <br/><br/>
+!! * The equation for this constraint is:
+!! * <pre>
+!! * [ body2.localPointToWorld(anchor2) ] = [ body1.localPointToWorld(anchor1) ]
+!! * [          body2.rotation          ]   [      body1.rotation + phase      ]
+!! * </pre>
+!! * This constraint is equivalent to using a PivotJoint and AngleJoint
+!! * together except that it is solved as a single constraint and thus
+!! * will be more stable.
+!! * <br/><br/>
+!! * This constraint is 3 dimensional.
+!! * <br/><br/>
+!! * Although this constraint is very stable, if you chain bodies together
+!! * using this constraint, you should except to see a small amount of rotation
+!! * about the anchor points so you should chose them accordingly.
+!! */
+@:final class WeldJoint extends Constraint {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner_zn):PR(WeldJoint) = null;
+
+    !!/**
+    !! * First Body in constraint.
+    !! * <br/><br/>
+    !! * This value may be null, but trying to simulate the constraint whilst
+    !! * this body is null will result in an error.
+    !! */
+    wrap_body_new(body1, b1, $(mixin isNew(b) pr(inner_zn).b2 != b) isNew)
+
+    !!/**
+    !! * Second Body in constraint.
+    !! * <br/><br/>
+    !! * This value may be null, but trying to simulate the constraint whilst
+    !! * this body is null will result in an error.
+    !! */
+    wrap_body_new(body2, b2, $(mixin isNew(b) pr(inner_zn).b1 != b) isNew)
+
+    !!/**
+    !! * Anchor point on first Body.
+    !! * <br/><br/>
+    !! * This anchor point is defined in the local coordinate system of body1.
+    !! */
+    wrap_anchor_new(anchor1, a1)
+
+    !!/**
+    !! * Anchor point on second Body.
+    !! * <br/><br/>
+    !! * This anchor point is defined in the local coordinate system of body2.
+    !! */
+    wrap_anchor_new(anchor2, a2)
+
+    !!/**
+    !! * Angular phase of bodies in WeldJoint.
+    !! *
+    !! * @default 0
+    !! */
+    property(phase, Float, {
+        return pr(inner_zn).phase;
+    }, {
+        pr(inner).immutable_midstep("WeldJoint::phase");
+        DEBUG(
+            if (isNaN(phase)) {
+                throw "Error: WeldJoint::phase cannot be NaN";
+            }
+        )
+
+        if (this.phase != phase) {
+            pr(inner_zn).phase = phase;
+            pr(inner).wake();
+        }
+    })
+
+    !!/**
+    !! * Construct a new WeldJoint.
+    !! *
+    !! * @param body1 The first body in WeldJoint.
+    !! * @param body2 The second body in WeldJoint.
+    !! * @param anchor1 The first local anchor for joint.
+    !! * @param anchor2 The second local anchor for joint.
+    !! * @param phase The angular phase of joint. (default 0)
+    !! * @return The constructed WeldJoint.
+    !! */
+    flibopts(1)
+    public function new(
+        body1:Null<Body>,
+        body2:Null<Body>,
+        anchor1:Vec2,
+        anchor2:Vec2,
+        phase:Float = 0.0
+    ) {
+        pr(inner_zn) = new PR(WeldJoint)();
+        pr(inner) = pr(inner_zn);
+        pr(inner).outer = this;
+        pr(inner_zn).outer_zn = this;
+
+        DEBUG(Constraint.pr(internalAlloc) = true; super(); Constraint.pr(internalAlloc) = false;)
+        RELEASE(super();)
+
+        this.body1 = body1;
+        this.body2 = body2;
+        this.anchor1 = anchor1;
+        this.anchor2 = anchor2;
+        this.phase = phase;
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! * <br/><br/>
+    !! * For this constraint, the MatMN will be 3x1.
+    !! */
+    public override function impulse():MatMN {
+        var ret = new MatMN(3, 1);
+        ret.setx(0, 0, pr(inner_zn).jAccx);
+        ret.setx(1, 0, pr(inner_zn).jAccy);
+        ret.setx(1, 0, pr(inner_zn).jAccz);
+        return ret;
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! */
+    public override function bodyImpulse(body:Body):Vec3 {
+        DEBUG(
+            if (body == null) {
+                throw "Error: Cannot evaluate impulse on null body";
+            }
+            if (body != body1 && body != body2) {
+                throw "Error: Body is not linked to this constraint";
+            }
+        )
+
+        if (!active) {
+            return Vec3.get();
+        }
+        else {
+            return pr(inner_zn).bodyImpulse(body.pr(inner));
+        }
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! */
+    public override function visitBodies(lambda:Body->Void):Void {
+        if (body1 != null) {
+            lambda(body1);
+        }
+        if (body2 != null && body2 != body1) {
+            lambda(body2);
+        }
+    }
+}
+
+)

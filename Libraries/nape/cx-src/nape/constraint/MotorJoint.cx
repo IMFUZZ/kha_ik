@@ -1,0 +1,153 @@
+package nape.constraint;
+$(import);
+
+withConstraint(
+!!/**
+!! * MotorJoint constraining the angular velocities of two bodies
+!! * <br/><br/>
+!! * The equation for this constraint is:
+!! * <pre>
+!! * (ratio * body2.angularVel) - body1.angularVel = rate
+!! * </pre>
+!! * This constraint operates only on the velocities of objects.
+!! */
+@:final class MotorJoint extends Constraint {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner_zn):PR(MotorJoint) = null;
+
+    !!/**
+    !! * First Body in constraint.
+    !! * <br/><br/>
+    !! * This value may be null, but trying to simulate the constraint whilst
+    !! * this body is null will result in an error.
+    !! */
+    wrap_body_new(body1, b1, $(mixin isNew(b) pr(inner_zn).b2 != b) isNew)
+
+    !!/**
+    !! * Second Body in constraint.
+    !! * <br/><br/>
+    !! * This value may be null, but trying to simulate the constraint whilst
+    !! * this body is null will result in an error.
+    !! */
+    wrap_body_new(body2, b2, $(mixin isNew(b) pr(inner_zn).b1 != b) isNew)
+
+    !!/**
+    !! * MotorJoint ratio.
+    !! *
+    !! * @default 1
+    !! */
+    property(ratio, Float, {
+        return pr(inner_zn).ratio;
+    }, {
+        pr(inner).immutable_midstep("MotorJoint::ratio");
+        DEBUG(
+            if (isNaN(ratio)) {
+                throw "Error: MotorJoint::ratio cannot be NaN";
+            }
+        )
+
+        if (this.ratio != ratio) {
+            pr(inner_zn).ratio = ratio;
+            pr(inner).wake();
+        }
+    })
+
+    !!/**
+    !! * MotorJoint rate
+    !! *
+    !! * @default 0
+    !! */
+    property(rate, Float, {
+        return pr(inner_zn).rate;
+    }, {
+        pr(inner).immutable_midstep("MotorJoint::rate");
+        DEBUG(
+            if (isNaN(rate)) {
+                throw "Error: MotorJoint::rate cannot be NaN";
+            }
+        )
+
+        if (this.rate != rate) {
+            pr(inner_zn).rate = rate;
+            pr(inner).wake();
+        }
+    })
+
+    !!/**
+    !! * Construct a new MotorJoint
+    !! *
+    !! * @param body1 The first body in MotorJoint
+    !! * @param body2 The second body in MotorJoint
+    !! * @param rate The rate of motor. (default 0)
+    !! * @param ratio The ratio of the motor. (default 1)
+    !! * @return The constructed MotorJoint.
+    !!**/
+    flibopts(2)
+    public function new(
+        body1:Null<Body>,
+        body2:Null<Body>,
+        rate:Float = 0.0,
+        ratio:Float = 1.0
+    ) {
+        pr(inner_zn) = new PR(MotorJoint)();
+        pr(inner) = pr(inner_zn);
+        pr(inner).outer = this;
+        pr(inner_zn).outer_zn = this;
+
+        DEBUG(Constraint.pr(internalAlloc) = true; super(); Constraint.pr(internalAlloc) = false;)
+        RELEASE(super();)
+
+        this.body1 = body1;
+        this.body2 = body2;
+        this.rate = rate;
+        this.ratio = ratio;
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! * <br/><br/>
+    !! * For this constraint, the MatMN will be 1x1.
+    !! */
+    public override function impulse():MatMN {
+        var ret = new MatMN(1, 1);
+        ret.setx(0, 0, pr(inner_zn).jAcc);
+        return ret;
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! * <br/><br/>
+    !! * For this constraint, only the z coordinate will be non-zero.
+    !! */
+    public override function bodyImpulse(body:Body):Vec3 {
+        DEBUG(
+            if (body == null) {
+                throw "Error: Cannot evaluate impulse on null body";
+            }
+            if (body != body1 && body != body2) {
+                throw "Error: Body is not linked to this constraint";
+            }
+        )
+
+        if (!active) {
+            return Vec3.get();
+        }
+        else {
+            return pr(inner_zn).bodyImpulse(body.pr(inner));
+        }
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! */
+    public override function visitBodies(lambda:Body->Void):Void {
+        if (body1 != null) {
+            lambda(body1);
+        }
+        if (body2 != null && body2 != body1) {
+            lambda(body2);
+        }
+    }
+})

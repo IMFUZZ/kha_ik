@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# build haxelib and test locally, not for use in releasing which is done from release script
+# and sets up xml properly with versioning info.
+
+make pre_compile
+cd src
+cat > haxelib.json << EOT
+{
+    "name":         "nape",
+    "url":          "https://github.com/deltaluca/nape",
+    "license":      "BSD",
+    "tags":         ["cross", "game"],
+    "description":  "Nape 2D Physics Engine",
+    "version":      "local",
+    "releasenote":  "local build",
+    "contributors": ["deltaluca"]
+}
+EOT
+rm -f napelib.zip
+zip -r napelib .
+haxelib local napelib.zip
+cd ../
+

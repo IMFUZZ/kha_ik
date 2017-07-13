@@ -1,0 +1,127 @@
+package nape.constraint;
+$(import);
+
+withConstraint(
+!!/**
+!! * PivotJoint constraining two anchors points of bodies to be equal.
+!! * <br/><br/>
+!! * The equation for this constraint is:
+!! * <pre>
+!! * body2.localPointToWorld(anchor2) = body1.localPointToWorld(anchor1)
+!! * </pre>
+!! * You may view this constraint as being equal to the DistanceJoint constraint
+!! * when both its jointMin and jointMax are exactly 0 (In such a case a
+!! * DistanceJoint becomes degenerate). Compared to the DistanceJoint this is
+!! * a 2 dimensional constraint.
+!! */
+@:final class PivotJoint extends Constraint {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner_zn):PR(PivotJoint) = null;
+
+    !!/**
+    !! * First Body in constraint.
+    !! * <br/><br/>
+    !! * This value may be null, but trying to simulate the constraint whilst
+    !! * this body is null will result in an error.
+    !! */
+    wrap_body_new(body1, b1, $(mixin isNew(b) pr(inner_zn).b2 != b) isNew)
+
+    !!/**
+    !! * Second Body in constraint.
+    !! * <br/><br/>
+    !! * This value may be null, but trying to simulate the constraint whilst
+    !! * this body is null will result in an error.
+    !! */
+    wrap_body_new(body2, b2, $(mixin isNew(b) pr(inner_zn).b1 != b) isNew)
+
+    !!/**
+    !! * Anchor point on first Body.
+    !! * <br/><br/>
+    !! * This anchor point is defined in the local coordinate system of body1.
+    !! */
+    wrap_anchor_new(anchor1, a1)
+
+    !!/**
+    !! * Anchor point on second Body.
+    !! * <br/><br/>
+    !! * This anchor point is defined in the local coordinate system of body2.
+    !! */
+    wrap_anchor_new(anchor2, a2)
+
+    !!/**
+    !! * Construct a new PivotJoint.
+    !! *
+    !! * @param body1 The first body in PivotJoint.
+    !! * @param body2 The second body in PivotJoint.
+    !! * @param anchor1 The first local anchor for joint.
+    !! * @param anchor2 The second local anchor for joint.
+    !! * @return The constructed PivotJoint.
+    !! */
+    flibopts(0)
+    public function new(
+        body1:Null<Body>,
+        body2:Null<Body>,
+        anchor1:Vec2,
+        anchor2:Vec2
+    ) {
+        pr(inner_zn) = new PR(PivotJoint)();
+        pr(inner) = pr(inner_zn);
+        pr(inner).outer = this;
+        pr(inner_zn).outer_zn = this;
+
+        DEBUG(Constraint.pr(internalAlloc) = true; super(); Constraint.pr(internalAlloc) = false;)
+        RELEASE(super();)
+
+        this.body1 = body1;
+        this.body2 = body2;
+        this.anchor1 = anchor1;
+        this.anchor2 = anchor2;
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! * <br/><br/>
+    !! * For this constraint, the MatMN will be 2x1.
+    !! */
+    public override function impulse():MatMN {
+        var ret = new MatMN(2, 1);
+        ret.setx(0, 0, pr(inner_zn).jAccx);
+        ret.setx(1, 0, pr(inner_zn).jAccy);
+        return ret;
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! */
+    public override function bodyImpulse(body:Body):Vec3 {
+        DEBUG(
+            if (body == null) {
+                throw "Error: Cannot evaluate impulse on null body";
+            }
+            if (body != body1 && body != body2) {
+                throw "Error: Body is not linked to this constraint";
+            }
+        )
+
+        if(!active) {
+            return Vec3.get();
+        }
+        else {
+            return pr(inner_zn).bodyImpulse(body.pr(inner));
+        }
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! */
+    public override function visitBodies(lambda:Body->Void):Void {
+        if (body1 != null) {
+            lambda(body1);
+        }
+        if (body2 != null && body2 != body1) {
+            lambda(body2);
+        }
+    }
+})

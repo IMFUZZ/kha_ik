@@ -1,0 +1,45 @@
+package nape.callbacks;
+$(import);
+
+!!/**
+!! * Base type for Callback event objects.
+!! * <br/><br/>
+!! * Callback objects are automatically reused and you should not keep references
+!! * to them.
+!! */
+class Callback {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner):PR(Callback) = null;
+
+    !!/**
+    !! * CbEvent type this callback was generated for.
+    !! */
+    property(event, CbEvent, {
+        return PR(Listener).events[pr(inner).event];
+    })
+
+    !!/**
+    !! * The Listener which was responsive for this callback being generated.
+    !! */
+    property(listener, Listener, {
+        return pr(inner).listener.outer;
+    })
+
+    !!/**
+    !! * @private
+    !! */
+    public function new() {
+        DEBUG(
+            if (!PR(Callback).internal) {
+                throw "Error: Callback cannot be instantiated derp!";
+            }
+        )
+    }
+
+    !!/**
+    !! * @private
+    !! */
+    @:$keep public function toString():String { return ""; }
+}

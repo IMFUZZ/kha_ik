@@ -1,0 +1,120 @@
+package nape.dynamics;
+$(import);
+
+!!/**
+!! * Fluid interaction subtype for Arbiter.
+!! */
+@:final class FluidArbiter extends Arbiter {
+
+    !!/**
+    !! * Centre of buoyancy for fluid interaction.
+    !! * <br/><br/>
+    !! * This value can be modified during a related PreListener handler.
+    !! */
+    property(position,Vec2, {
+        DEBUG(if(pr(inner).inactiveme()) throw "Error: Arbiter not currently in use";)
+        if(pr(inner).fluidarb.wrap_position==null) pr(inner).fluidarb.getposition();
+        return pr(inner).fluidarb.wrap_position;
+    },{
+        DEBUG(if(!pr(inner).fluidarb.mutable) throw "Error: Arbiter is mutable only within a pre-handler";)
+        DEBUG(if(position==null) throw "Error: FluidArbiter::position cannot be null";)
+        this.position.set(position);
+    })
+
+    !!/**
+    !! * Overlap area of Shapes in fluid interaction.
+    !! * <br/><br/>
+    !! * This value is strictly positive, and represents the amount of overlap between the Shapes
+    !! * used in buoyancy computations.
+    !! * <br/><br/>
+    !! * This value can be modified during a related PreListener handler.
+    !! */
+    property(overlap,Float,{
+        DEBUG(if(pr(inner).inactiveme()) throw "Error: Arbiter not currently in use";)
+        return pr(inner).fluidarb.overlap;
+    },{
+        DEBUG(if(!pr(inner).fluidarb.mutable) throw "Error: Arbiter is mutable only within a pre-handler";)
+        DEBUG(if(isNaN(overlap)) throw "Error: FluidArbiter::overlap cannot be NaN";)
+        DEBUG(if(overlap<=0 || overlap==Math.POSITIVE_INFINITY) throw "Error: FluidArbiter::overlap must be strictly positive and non infinite";)
+        pr(inner).fluidarb.overlap = overlap;
+    })
+
+    !!/**
+    !! * Determine impulse on a given body due to buoyancy.
+    !! * <br/><br/>
+    !! * If the body is null, then the buoyancy impulse will be returned without consideration to any specific
+    !! * body involved, and no angular impulses can be derived.
+    !! *
+    !! * @param body The body to query impulse for. (default null)
+    !! * @return The buoyancy impulse for given body.
+    !! * @throws # If body is non-null, and unrelated to this Arbiter.
+    !! */
+    keep public function buoyancyImpulse(body:Body=null):Vec3 {
+        DEBUG(if(pr(inner).inactiveme()) throw "Error: Arbiter not currently in use";)
+        DEBUG(if(body!=null && body!=body1 && body!=body2) throw "Error: Arbiter does not relate to body";)
+
+        var farb = pr(inner).fluidarb;
+        if (body == null) {
+            return Vec3.get(farb.buoyx, farb.buoyy, 0);
+        }
+        else if (body.pr(inner) == pr(inner).b2) {
+            return Vec3.get(farb.buoyx, farb.buoyy, vec_cross(farb.r2, farb.buoy));
+        }
+        else {
+            return Vec3.get(-farb.buoyx, -farb.buoyy, -vec_cross(farb.r1, farb.buoy));
+        }
+    }
+
+    !!/**
+    !! * Determine impulse on a given body due to fluid drag.
+    !! * <br/><br/>
+    !! * If the body is null, then the drag impulse will be returned without consideration to any specific
+    !! * body involved.
+    !! *
+    !! * @param body The body to query impulse for. (default null)
+    !! * @return The drag impulse for given body.
+    !! * @throws # If body is non-null, and unrelated to this Arbiter.
+    !! */
+    keep public function dragImpulse(body:Body=null):Vec3 {
+        DEBUG(if(pr(inner).inactiveme()) throw "Error: Arbiter not currently in use";)
+        DEBUG(if(body!=null && body!=body1 && body!=body2) throw "Error: Arbiter does not relate to body";)
+
+        var farb = pr(inner).fluidarb;
+        var scale = (body == null || body.pr(inner) == pr(inner).b2 ? 1 : -1);
+        return Vec3.get(farb.dampx * scale,farb.dampy * scale,farb.adamp * scale);
+    }
+
+    !!/**
+    !! * Determine total impulse on a given body due to fluid interaction.
+    !! * <br/><br/>
+    !! * If the body is null, then the total impulse will be computed without consideration to any specific
+    !! * body involved, and no angular impulses can be derived for the linear portion of the impulses.
+    !! *
+    !! * @param body The body to query impulse for. (default null)
+    !! * @param freshOnly This parameter is unused for FluidArbiters. (default false)
+    !! * @return The total impulse for given body.
+    !! * @throws # If body is non-null, and unrelated to this Arbiter.
+    !! */
+    keep public override function totalImpulse(body:Body=null,freshOnly:Bool=false) {
+        DEBUG(if(pr(inner).inactiveme()) throw "Error: Arbiter not currently in use";)
+        DEBUG(if(body!=null && body!=body1 && body!=body2) throw "Error: Arbiter does not relate to body";)
+
+        var tmp = this.buoyancyImpulse(body);
+        var ret = this.dragImpulse(body);
+        ret.x += tmp.x;
+        ret.y += tmp.y;
+        ret.z += tmp.z;
+        tmp.dispose();
+        return ret;
+    }
+
+    !!/**
+    !! * @private
+    !! */
+    public function new() {
+        DEBUG(if(!PR(Arbiter).internal)
+            throw "Error: Cannot instantiate FluidArbiter derp!";
+        )
+        super();
+    }
+}

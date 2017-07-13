@@ -1,0 +1,373 @@
+package zpp_nape.geom;
+$(import);
+
+$(mixin Vertex PR(PartitionVertex));
+$(mixin Edge Vertex);
+
+//vertex in a partitioned polygon
+//also serves as the edge (this, this.next)
+class Vertex {
+    // Used in delaunay triangulation to order edges.
+    public var id:Int = 0;
+    static var nextId = 0;
+    public var mag:Float = 0; //x^2 + y^2
+
+    //vertex position
+    vec_new(public,$(->));
+    //used to propogate 'fixed'ness of vertices for simplification
+    public var forced:Bool = false;
+
+    public var diagonals:List(Vertex) = null;
+
+    //helper in monotone decomposition + type
+    public var type:Int = 0;
+    public var helper:Vertex = null;
+
+    //chain side in triangulation
+    public var rightchain:Bool = false;
+
+    MixPoolNoNext(Vertex)
+    //for circular linked list.
+    public var next:Vertex = null;
+    public var prev:Vertex = null;
+
+    public function new() {
+        id = nextId++;
+        diagonals = new List(Vertex)();
+    }
+    public inline function alloc() {
+    }
+    public inline function free() {
+        helper = null;
+        assert(diagonals.empty(), "non-empty diagonals");
+    }
+
+    public static inline function get(x:PR(GeomVert)) {
+        var ret; Get(Vertex, ret);
+        vec_set(ret., x.);
+        return ret;
+    }
+    public inline function copy() {
+        var ret; Get(Vertex, ret);
+        vec_set(ret., this.);
+        ret.forced = forced;
+        return ret;
+    }
+
+    //sort diagonals in order of processing when pulling polygons out of partitions
+    public function sort() {
+        vec_new(u); vec_new(v);
+        // return -1 for left turn, 0 for straight/backwards 1 for right turn.
+        $(mixin orient(a, b, c) ({
+            vec_sub(a., b., u);
+            vec_sub(c., b., v);
+            var ret = vec_cross(u, v);
+            /*return*/ if (ret > 0) -1 elif (ret == 0) 0 else 1;
+        }));
+
+        var vorient = orient(prev, this, next);
+        assert(vorient != 0, "collinear edge on boundary of partitioned poly?");
+        Sort(diagonals, Node(Vertex), $(mixin lt(p, q) ({
+            if (vorient == 1) {
+                /*return*/ orient(p, this, q) == 1;
+            }
+            else {
+                var d1 = orient(prev, this, p);
+                var d2 = orient(prev, this, q);
+                if (d1 * d2 == 1
+                || (d1 * d2 == 0 && (d1 == 1 || d2 == 1))) {
+                    /*return*/ orient(p, this, q) == 1;
+                }
+                else if (d1 == -1 || d2 == -1) {
+                    /*return*/ d2 == -1;
+                }
+                else if (d1 == 0 && d2 == 0) {
+                    // FFS!!!
+                    vec_sub(this., prev., u);
+                    vec_sub(p., this., v);
+                    var d1 = vec_dot(u, v);
+                    vec_sub(q., this., v);
+                    var d2 = vec_dot(u, v);
+                    if   (d1 < 0 && d2 > 0) /*return*/ true
+                    elif (d2 < 0 && d1 > 0) /*return*/ false
+                    else {
+                        assert(false, "da fuquuuququ ... ");
+                        /*return*/ true;
+                    }
+                }
+                else {
+                    assert(false, "da fuq....");
+                    /*return*/ true;
+                }
+            }
+        })) lt);
+    }
+
+    //determine right distance of vertex from edge, sign being important, magnitude not.
+    static function rightdistance(edge:Edge, vert:Vertex) {
+        //assume edge is not horizontal
+        var flip = edge.next.y > edge.y;
+        vec_new(u); vec_sub(edge.next., edge., u);
+        vec_new(v); vec_sub(vert., edge., v);
+        return (flip ? -1.0 : 1.0) * vec_cross(u, v);
+    }
+
+    //determine if edge is to the left of the vertex
+    public static function vert_lt(edge:Edge,vert:Vertex) {
+        return if   (vert==edge || vert==edge.next) true
+               elif (edge.y==edge.next.y) min(edge.x,edge.next.x) <= vert.x;
+               else rightdistance(edge,vert) <= 0.0;
+    }
+
+    //for use in RBTree Set for sorted tree of edges
+    //returns true if 'this' edge should be placed to the right geometrically of 'q'
+    public var node:Set(Edge) = null;
+    public static function edge_swap(p:Edge, q:Edge) swap(p.node, q.node)
+
+    public static function edge_lt(p:Edge, q:Edge) {
+        if (p == q && p.next == q.next) {
+            assert(false,"Attempting to sort an edge with itself");
+            return false;
+        }
+
+        //handle shared vertices (literal) between the two edges
+        // noting thiat p==q and p.next==q.next can never happen without above check being true.
+        // since a vertex is shared, we want to know if the other vertex of the second edge
+        // is to the right/left of the first edge.
+        if   (p == q.next) return !vert_lt(p, q);
+        elif (q == p.next) return  vert_lt(q, p);
+        //if neither vertex is shared, we still need to handle horizontal edges
+        elif (p.y == p.next.y) {
+            return
+                if (q.y == q.next.y) max(p.x, p.next.x) > max(q.x, q.next.x)
+                else (rightdistance(q, p) > 0.0 || rightdistance(q, p.next) > 0.0);
+        }else {
+            var qRight = rightdistance(p, q);
+            var qNextRight = rightdistance(p, q.next);
+
+            if (qRight == 0 && qNextRight == 0) {
+                // collinear edges
+                return max(p.x, p.next.x) > max(q.x, q.next.x);
+            }
+
+            if (qRight * qNextRight >= 0) return (qRight < 0 || qNextRight < 0);
+
+            var pRight = rightdistance(q, p);
+            var pNextRight = rightdistance(q, p.next);
+            assert (pRight != 0 || pNextRight != 0, "collinear edges comparison");
+
+            if (pRight * pNextRight >= 0) return (pRight > 0 || pNextRight > 0);
+
+            assert(false, "faaaail");
+
+            return false;
+        }
+    }
+}
+
+mixpool_circular(Vertex,
+class PR(PartitionedPoly) {
+    public var vertices:Vertex = null; //circular linked list.
+
+    function eq(a:Vertex, b:Vertex) {
+        return vec_dsq(a., b.) < (Config.epsilon * Config.epsilon);
+    }
+
+    //we remove degenerate vertices, and collinear vertices
+    //as this was the easiest way to make the monotonic decomposition robust.
+    public function new(?P:PR(GeomVert)) {
+        init(P);
+    }
+
+    MixPool(PR(PartitionedPoly))
+    public inline function alloc() {
+    }
+    public inline function free() {
+        assert(vertices==null,"freed PartitionedPoly has vertices");
+    }
+
+    public function init(?P:PR(GeomVert)) {
+        if(P==null) return;
+        var cw = geom(clockwise(P));
+        var p = P;
+        do {
+            vertices =
+                if(cw) push_after(vertices,Vertex.get(p))
+                else  push_before(vertices,Vertex.get(p))
+            vertices.forced = p.forced;
+            p = p.next;
+        }
+        while (p != P);
+        remove_collinear_vertices();
+    }
+
+    // careful to ensure that the PartitioendPoly's concept of collinearity
+    // is equal to that of the Polygon object used in physics.
+    public function remove_collinear_vertices() {
+        // strip equal vertices first
+        var p = vertices;
+        var skip = true;
+        while (skip || p != vertices) {
+            skip = false;
+            if (eq(p, p.next)) {
+                //remove vertex 'p'
+                if (p == vertices) {
+                    vertices = p.next;
+                    skip = true;
+                }
+                if (p.forced) p.next.forced = true;
+                p = pop_ret_after(p);
+                if (p == null) {
+                    vertices = null;
+                    break;
+                }
+            }
+            else p = p.next;
+        }
+
+        if (vertices == null) return true;
+
+        // strip collinear vertices
+        // due to epsilon, may need more than one pass.
+        var removed;
+        do {
+            removed = false;
+            p = vertices;
+            skip = true;
+            while (skip || p != vertices) {
+                skip = false;
+                var pre = p.prev;
+                vec_new(u); vec_sub(p., pre., u);
+                vec_new(v); vec_sub(p.next., p. , v);
+                var crs = vec_cross(u, v);
+                if (crs * crs >= (Config.epsilon * Config.epsilon)) {
+                    //keep vertex
+                    p = p.next;
+                }else
+                {
+                    //remove vertex 'p'
+                    if (p == vertices) {
+                        vertices = p.next;
+                        skip = true;
+                    }
+                    p = pop_ret_after(p);
+                    removed = true;
+
+                    if (p == null) {
+                        removed = false;
+                        vertices = null;
+                        break;
+                    }
+                }
+            }
+        }
+        while (removed);
+
+        return (vertices == null);
+    }
+
+    public function add_diagonal(p:Vertex,q:Vertex) {
+        p.diagonals.add(q);
+        q.diagonals.add(p);
+        p.forced = q.forced = true;
+    }
+
+    // Shared List(PR(PartitionedPoly)) to be re-used
+    public static var sharedPPList:List(PR(PartitionedPoly));
+    public static inline function getSharedPP() {
+        if (sharedPPList==null) sharedPPList = new List(PR(PartitionedPoly))();
+        return sharedPPList;
+    }
+
+    //perform extraction, but into more partition polygons instead.
+    public function extract_partitions(?ret:List(PR(PartitionedPoly))) {
+        if (ret == null) ret = new List(PR(PartitionedPoly))();
+        if (vertices != null) {
+            for_iter(c, vertices, c.sort());
+            pull_partitions(vertices, ret);
+            clear(vertices);
+            // remove any collinear vertices as we seed this to new decompositions directly.
+
+            // remove_collinear_vertices can zero a polygon.
+            var pre = null;
+            Iter(p, ret, {
+                if(p.remove_collinear_vertices()) {
+                    ret.erase(pre);
+                    continue;
+                }
+                pre = cx_ite;
+            })
+        }
+        return ret;
+    }
+    private function pull_partitions(start:Vertex, ret:List(PR(PartitionedPoly))) {
+        var poly; Get(PR(PartitionedPoly), poly);
+        var next = start;
+        do {
+            mix_circular(PR(Vertex),
+                poly.vertices = push_after(poly.vertices, next.copy());
+                poly.vertices.forced = next.forced;
+            )
+            if(!next.diagonals.empty()) {
+                var diag = next.diagonals.inlined_pop_unsafe();
+                if(diag==start) break;
+                else next = pull_partitions(next,ret);
+            }else
+                next = next.next;
+        }while(next!=start);
+
+        assert(geom(clockwise(poly.vertices)),"out poly is not convex :(");
+
+        if(geom(signed_area(poly.vertices))!=0)
+            ret.add(poly);
+        return next;
+    }
+
+    // Shared List(PR(GeomVert)) to be re-used
+    public static var sharedGVList:List(PR(GeomVert));
+    public static inline function getShared() {
+        if (sharedGVList==null) sharedGVList = new List(PR(GeomVert))();
+        return sharedGVList;
+    }
+
+    //pull polygons out of the partitions
+    public function extract(?ret:List(PR(GeomVert))) {
+        if (ret == null) ret = new List(PR(GeomVert))();
+        if (vertices != null) {
+            for_iter(c, vertices, c.sort());
+            pull(vertices, ret);
+            clear(vertices);
+        }
+        return ret;
+    }
+    private function pull(start:Vertex, ret:List(PR(GeomVert))) {
+        var poly:PR(GeomVert) = null;
+        var next = start;
+        do {
+            mix_circular(PR(GeomVert),
+                poly = push_after(poly, PR(GeomVert).get(next.x,next.y));
+                poly.forced = next.forced;
+            )
+            if(!next.diagonals.empty()) {
+                var diag = next.diagonals.inlined_pop_unsafe();
+                if(diag==start) { break; }
+                else next = pull(next,ret);
+            }else
+                next = next.next;
+        }while(next!=start);
+
+        assert(geom(clockwise(poly)),"out poly is not convex :(");
+
+        // careful not to return a polygon that Polygon would consider
+        // invalid due to area being so small.
+        var area = geom(signed_area(poly));
+        if (area*area >= (Config.epsilon * Config.epsilon)) {
+            // Ensure that sanitation will not degenerate the polygon too. sigh.
+            if (!geom(sanitise(poly))) {
+                ret.add(poly);
+            }
+        }
+        return next;
+    }
+}
+)

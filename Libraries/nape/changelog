@@ -1,0 +1,4 @@
+Fix bug for Polygon::localCOM not being correctly validated.
+
+Set scrollRect on ShapeDebug display object to clip contents
+to constructor's width/height.

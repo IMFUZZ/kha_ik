@@ -1,0 +1,124 @@
+package zpp_nape.geom;
+$(import);
+
+//
+// Private Vec2 Type
+//
+
+class PR(Vec2) {
+
+    // (Public Vec2)
+    // '_invalidate' : Function to be called whenever the Public Vec2 is mutated
+    //                 Argument is the (private) Vec2 that was modified
+    // '_validate'   : Function to be called to validate that x/y values are
+    //                 correctly set for public reading: allows lazy computation
+    //
+    // Due to the repetitive nature of these calls, they should be made as light
+    // weight as possible.
+    public var _invalidate:Null<PR(Vec2)->Void> = null;
+    public var _validate  :Null<Void->Void> = null;
+
+    // Wrappers used by public Vec2 to delegate logic.
+    flibmdel public inline function validate():Void {
+        if (_validate != null) {
+            _validate();
+        }
+    }
+    flibmdel public inline function invalidate():Void {
+        if (_invalidate != null) {
+            _invalidate(this);
+        }
+    }
+
+    // (Public Vec2)
+    // '_immutable'   : If true, then public Vec2 is not permitted to be mutated
+    // '_isimmutable' : Function to be called to query whether Vec2 is able to
+    //                  be mutated or not.
+    //
+    // _isimmutable function is for when the nature of the Vec2's immutability
+    // is more fine grained: when Vec2 is 'sometimes' immutable and it is easier
+    // to have this quality 'asked' for instead of set directly.
+    public var _immutable  :Bool = false;
+    public var _isimmutable:Null<Void->Void> = null;
+
+    // Wrapper used by public Vec2 to delegate logic.
+    flibmdel public inline function immutable():Void {
+        DEBUG(
+            if (_immutable) {
+                throw "Error: Vec2 is immutable";
+            }
+
+            if (_isimmutable != null) {
+                _isimmutable();
+            }
+        )
+    }
+
+    // (Public Vec2)
+    // Reference to public Vec2 wrapping 'this' if it exists
+    public var outer:Null<Vec2> = null;
+
+    // Method to generate public shared wrapper if required.
+    flibmdel public inline function wrapper():Vec2 {
+        if (outer == null) {
+            // TODO: Get this from object pool?
+            outer = new Vec2();
+
+            // Vec2 constructor will create a PR(Vec2)
+            // but we want it to wrap 'this' so we release
+            // it directly back to object pool.
+            Free(PR(Vec2),outer.pr(inner));
+
+            outer.pr(inner) = this;
+        }
+
+        return outer;
+    }
+
+    // (Public Vec2)
+    // When true, the public Vec2 (and 'this') will be released directly to the
+    // object pool whenever this vec2 is passed as an argument to a nape
+    // function.
+    public var weak:Bool = false;
+
+    // Object pool definitions.
+    MixPoolNoNext(PR(Vec2)) // 'next' is already created by MixListMixin below.
+    flibmdel public inline function free():Void {
+        if (outer != null) {
+            outer.pr(inner) = null;
+            outer = null;
+        }
+        _isimmutable = null;
+        _validate = null;
+        _invalidate = null;
+    }
+    flibmdel public inline function alloc():Void {
+        weak = false;
+    }
+
+    // Allow Vec2 to operate as a mixin defined list.
+    // This is utilised by Polygon for instance.
+    MixListMixin(PR(Vec2))
+
+    // x,y properties.
+    vec_new(public, $(->));
+
+    // !! Constructor should not be used !!
+    // Instead the static 'get' should be used to make use of object pool
+    // automaticaly.
+    public function new() {}
+    public static inline function get(x:Float, y:Float, immutable:Bool = false):PR(Vec2) {
+        var ret; Get(PR(Vec2), ret);
+        ret._immutable = immutable;
+        vec_set(ret., $(->));
+        return ret;
+    }
+
+    flibmdel public inline function copy():PR(Vec2) {
+        return get(x, y);
+    }
+
+    public function toString():String {
+        return "{ x: "+x+" y: "+y+" }";
+    }
+}

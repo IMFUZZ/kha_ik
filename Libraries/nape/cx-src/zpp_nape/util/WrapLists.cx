@@ -1,0 +1,749 @@
+package zpp_nape.util;
+$(import);
+
+/**
+
+    User exposed list types.
+
+    WrapList(T,ListT,IteT, defs) :
+        Type name, eg: Body
+        Underlying list name, eg: List(PR(Body))
+        Underlying iterator name, eg: Node(PR(Body))
+
+        defs: list of further definitions as mixins.
+            use_accept -> Bool; if true then this exposed list will transparently hide certain
+                                elements as described by accept(x)
+            accept(x) -> Bool ; if true for given x, then x will be exposed to the user.
+
+            use_inline -> Bool; if true then whichever methods can, will be inlined, goes hand in
+                                hand with inline macro, which should simply be '$inline' if you want
+                                inlining.
+
+            copy_elt(o:T) -> T ; describe how an object in the user-exposed list must be copied.
+
+            reversal(i:Int) -> Int ; return index of element 'i' when list has been reversed
+                    IF this is not the default, then LIST CANNOT BE MUTABLE (avoids complication)
+
+    assumption: use_accept <=> immutable list (avoids complication also)
+
+    //-----------
+
+    if not using inlining, can override how the list is accessed in a more fundamental way than
+    though accepting macro by overriding methods like push/pop/at, and also by overriding the
+    pr(vm) and pr(gl) methods which only exist for non-inlined lists to handle validation of the list
+    and length of the list respectively.
+
+**/
+
+$(mixin global WrapList(T,ListT,IteT, defs)
+    WrapListNew(T,ListT,IteT,defs)
+    WrapListIterator(T,ListT,IteT,defs)
+);
+
+$(mixin global WrapListNew(T,ListT,IteT, defs) WrapListNew(T,ListT,IteT,defs,false));
+$(mixin global WrapListNew(T,ListT,IteT, defs, noFinal)
+    $(mixin accept(x) true);
+    $(mixin use_accept false);
+
+    $(mixin inline $inline);
+    $(mixin use_inline true);
+
+    $(mixin copy_elt(o) { DEBUG(throw "Error: "+$str(T)+" is not a copyable type"; ) null; });
+
+    $(mixin reversal(i) (length-1-i));
+
+    !!/**
+    $doc($$*$$Nape list of T type objects)
+    !! * <br/><br/>
+    !! * Internally this list is at present implemented as a linked list with
+    !! * object pooled nodes and iterators with various fast paths made for
+    !! * standard access patterns (For instance accessing successive elements
+    !! * runs in constant time when using random access functions)
+    !! * <br/><br/>
+    !! * Iteration of this list can be done in various ways, but the preferred
+    !! * way on all targets, is through use of the foreach function:
+    !! * <pre>
+    !! * list.foreach(function (obj) {
+    !! * });
+    !! * </pre>
+    !! * This method is inlined so that in haxe no closure will need to be created.
+    !! * <br/><br/>
+    !! * In AS3, a closure would need to be created in general, so for performance
+    !! * reasons you 'may' choose to use iteration as follows:
+    !! * <pre>
+    !! * for (var i:int = 0; i < list.length; i++) {
+    $doc($$*$$$$$$$$$$var obj:T$$=$$list.at(i);)
+    !! * }
+    !! * </pre>
+    !! * <br/>
+    !! * NOTE: It is 'not' safe to modify a list whilst iterating over it.
+    !! * If you wish to remove elements during an iteration you should use the
+    !! * filter method, for example:
+    !! * <pre>
+    !! * list.filter(function (obj) {
+    !! *     // operate on object.
+    !! *     // ...
+    !! *     return (false if you want object to be removed);
+    !! * });
+    !! * </pre>
+    !! * <br/><br/>
+    !! * In AS3, if you wish to avoid a closure generation, you can perform such
+    !! * an iteration in a safe manner as follows:
+    !! * <pre>
+    !! * var i:int = 0;
+    !! * while (i < list.length) {
+    $doc($$*$$$$$$$$$$var obj:T$$=$$list.at(i);)
+    !! *     // operate on object.
+    !! *     // ...
+    !! *     if (should remove obj) {
+    !! *         list.remove(obj);
+    !! *         continue;
+    !! *     }
+    !! *     else i++;
+    !! * }
+    !! * </pre>
+    !! * Or if you are always clearing the list entirely you could write:
+    !! * <pre>
+    !! * while (!list.empty()) {
+    $doc($$*$$$$$$$$$$var obj:T$$=$$list.pop();)
+    !! *     // operate on object.
+    !! *     // ...
+    !! * }
+    !! * </pre>
+    !! */
+    #if !noFinal @:final #end class T`List {
+        defs
+
+        !!/**
+        !! * @private
+        !! */
+        public var pr(inner):PR(T`List) = null;
+
+        !!/**
+        !! * Length of list.
+        !! */
+        #if nape_swc @:isVar #end public var length(get_length,never):Int;
+        //this must truly be inlined for nape_swc.
+        #if use_inline
+            force_inline function get_length() {
+                pr(inner).valmod();
+
+                if(pr(inner).inv(length)) {
+                    pr(inner).inv(length) = false;
+
+                    if(use_accept) {
+                        pr(inner).user_length = 0;
+                        Iter(i,pr(inner).inner,if(accept(i)) pr(inner).user_length++);
+                    }else
+                        pr(inner).user_length = pr(inner).inner.length;
+                }
+                return pr(inner).user_length;
+            }
+        #else
+            force_inline function get_length() {
+                return pr(gl)();
+            }
+
+            !!/**
+            !! * @private
+            !! */
+            public function pr(gl)() {
+                pr(inner).valmod();
+
+                if(pr(inner).inv(length)) {
+                    pr(inner).inv(length) = false;
+
+                    if(use_accept) {
+                        pr(inner).user_length = 0;
+                        Iter(i,pr(inner).inner,if(accept(i)) pr(inner).user_length++);
+                    }else
+                        pr(inner).user_length = pr(inner).inner.length;
+                }
+                return pr(inner).user_length;
+            }
+
+            !!/**
+            !! * @private
+            !! */
+            public function pr(vm)() {
+                pr(inner).valmod();
+            }
+        #end
+
+        !!/**
+        !! * Convert standard Array to Nape list.
+        !! *
+        !! * @param array The array to be converted
+        !! * @return An equivalent Nape list.
+        !! * @throws If array argument is null.
+        $doc($$*$$@throws If array contains elements of type other than T)
+        !! */
+        keep public static function fromArray(array:Array<T>) {
+            DEBUG(
+                if (array == null)
+                {
+                    throw "Error: Cannot convert null Array to Nape list";
+                }
+            )
+
+            var ret = new T`List();
+            for(i in array) {
+                #if flash9
+                    DEBUG(if(!Stdis(i,T)) throw "Error: Array contains non "+$str(T)+" types.";)
+                #end
+                ret.push(i);
+            }
+            return ret;
+        }
+        #if flash9
+            !!/**
+            !! * Convert flash.Vector to Nape list.
+            !! *
+            !! * @param vector The vector to be converted
+            !! * @return An equivalent Nape list.
+            !! * @throws # If vector argument is null.
+            !! */
+            keep public static function fromVector(vector:flash.Vector<T>) {
+                DEBUG(
+                    if (vector == null)
+                    {
+                        throw "Error: Cannot convert null Vector to Nape list";
+                    }
+                )
+
+                var ret = new T`List();
+                for(i in vector)
+                    ret.push(i);
+                return ret;
+            }
+        #end
+
+        !!/**
+        !! * Check if element is already in the list
+        !! *
+        !! * @param obj The object to test.
+        !! * @return True if object is in the list.
+        !! */
+        keep public function has(obj:T):Bool {
+            #if use_inline pr(inner).valmod(); #else pr(vm)(); #end
+            return pr(inner).inner.has(erusolc(obj));
+        }
+
+        //optimised for fast sequential access when preferable to use of iterator.
+        !!/**
+        !! * Random access to elements of list by index.
+        !! * <br/><br/>
+        !! * Under normal circumstances, accessing succesive elements via this
+        !! * method will occur in constant time.
+        !! *
+        !! * @param index The index of the element in list to access.
+        !! * @returns The element at the given index.
+        !! * @throws # If index is out of bounds.
+        !! */
+        keep public function at(index:Int):T {
+            #if use_inline pr(inner).valmod(); #else pr(vm)(); #end
+
+            DEBUG(if(index<0 || index>=length) throw "Error: Index out of bounds";)
+
+            if(pr(inner).reverse_flag) index = reversal(index);
+
+            if(!use_accept) {
+                if(index<pr(inner).at_index || pr(inner).at_ite==null) {
+                    pr(inner).at_index = index;
+                    pr(inner).at_ite = pr(inner).inner.iterator_at(index);
+                }else {
+                    while(pr(inner).at_index!=index) {
+                        pr(inner).at_index++;
+                        pr(inner).at_ite = pr(inner).at_ite.next;
+                    }
+                }
+            }else {
+                if(index<pr(inner).at_index || pr(inner).at_ite==null) {
+                    pr(inner).at_index = 0;
+                    pr(inner).at_ite = pr(inner).inner.begin();
+                    while(true) {
+                        var x = pr(inner).at_ite.elem();
+                        if(accept(x)) break;
+                        pr(inner).at_ite = pr(inner).at_ite.next;
+                    }
+                }
+                while(pr(inner).at_index!=index) {
+                    pr(inner).at_index++;
+                    pr(inner).at_ite = pr(inner).at_ite.next;
+                    while(true) {
+                        var x = pr(inner).at_ite.elem();
+                        if(accept(x)) break;
+                        pr(inner).at_ite = pr(inner).at_ite.next;
+                    }
+                }
+            }
+
+            return closure(pr(inner).at_ite.elem());
+        }
+
+        !!/**
+        !! * Push element to back of list.
+        !! * <br/><br/>
+        !! * When the order of objects is not important, it is best to use the
+        !! * add() method instead.
+        !! *
+        !! * @param obj The object to insert.
+        !! * @returns True if object was successively inserted.
+        !! * @throws # If list is immutable.
+        !! */
+        keep public function push(obj:T):Bool {
+            DEBUG(if(pr(inner).immutable) throw "Error: "+$str(T)+"List is immutable";)
+            pr(inner).modify_test();
+            #if use_inline pr(inner).valmod(); #else pr(vm)(); #end
+
+            var cont = if(pr(inner).adder!=null) pr(inner).adder(obj) else true;
+            if(cont) {
+                if(pr(inner).reverse_flag)
+                    pr(inner).inner.add(erusolc(obj));
+                else {
+                    if(pr(inner).push_ite==null) pr(inner).push_ite = empty() ? null : pr(inner).inner.iterator_at(length-1);
+                    pr(inner).push_ite = pr(inner).inner.insert(pr(inner).push_ite,erusolc(obj));
+                }
+                pr(inner).invalidate();
+
+                if(pr(inner).post_adder!=null) pr(inner).post_adder(obj);
+            }
+            return cont;
+        }
+
+        !!/**
+        !! * Push element to front of list.
+        !! * <br/><br/>
+        !! * When the order of objects is not important, it is best to use the
+        !! * add() method instead.
+        !! *
+        !! * @param obj The object to insert.
+        !! * @returns True if object was successively inserted.
+        !! * @throws # If list is immutable.
+        !! */
+        keep public function unshift(obj:T):Bool {
+            DEBUG(if(pr(inner).immutable) throw "Error: "+$str(T)+"List is immutable";)
+            pr(inner).modify_test();
+            #if use_inline pr(inner).valmod(); #else pr(vm)(); #end
+
+            var cont = if(pr(inner).adder!=null) pr(inner).adder(obj) else true;
+            if(cont) {
+                if(pr(inner).reverse_flag) {
+                    if(pr(inner).push_ite==null) pr(inner).push_ite = empty() ? null : pr(inner).inner.iterator_at(length-1);
+                    pr(inner).push_ite = pr(inner).inner.insert(pr(inner).push_ite,erusolc(obj));
+                }else
+                    pr(inner).inner.add(erusolc(obj));
+                pr(inner).invalidate();
+
+                if(pr(inner).post_adder!=null) pr(inner).post_adder(obj);
+            }
+            return cont;
+        }
+
+        !!/**
+        !! * Pop element from back of list.
+        !! * <br/><br/>
+        !! * If you are wanting to clear a list, whilst operating on its elements,
+        !! * consider use of the filter method instead.
+        !! *
+        !! * @returns The element removed from list.
+        !! * @throws # If list is immutable.
+        !! * @throws # If the list is empty.
+        !! */
+        keep public function pop():T {
+            DEBUG(if(pr(inner).immutable) throw "Error: "+$str(T)+"List is immutable";)
+            pr(inner).modify_test();
+            DEBUG(if(empty()) throw "Error: Cannot remove from empty list";)
+            #if use_inline pr(inner).valmod(); #else pr(vm)(); #end
+
+            var ret = null;
+            if(pr(inner).reverse_flag) {
+                ret = pr(inner).inner.front();
+                var retx = closure(ret);
+                if(pr(inner).subber!=null) pr(inner).subber(retx);
+                if(!pr(inner).dontremove)
+                    pr(inner).inner.pop();
+            }else {
+                if(pr(inner).at_ite!=null && pr(inner).at_ite.next == null) pr(inner).at_ite = null;
+                var ite = length==1 ? null : pr(inner).inner.iterator_at(length-2);
+                ret = ite == null ? pr(inner).inner.front() : ite.next.elem();
+                var retx = closure(ret);
+                if(pr(inner).subber!=null) pr(inner).subber(retx);
+                if(!pr(inner).dontremove)
+                    pr(inner).inner.erase(ite);
+            }
+
+            pr(inner).invalidate();
+            var retx = closure(ret);
+            return retx;
+        }
+
+        !!/**
+        !! * Pop element from front of list.
+        !! * <br/><br/>
+        !! * If you are wanting to clear a list, whilst operating on its elements,
+        !! * consider use of the filter method instead.
+        !! *
+        !! * @returns The element removed from list.
+        !! * @throws # If list is immutable.
+        !! * @throws # If the list is empty.
+        !! */
+        keep public function shift():T {
+            DEBUG(if(pr(inner).immutable) throw "Error: "+$str(T)+"List is immutable";)
+            pr(inner).modify_test();
+            DEBUG(if(empty()) throw "Error: Cannot remove from empty list";)
+            #if use_inline pr(inner).valmod(); #else pr(vm)(); #end
+
+            var ret = null;
+            if(pr(inner).reverse_flag) {
+                if(pr(inner).at_ite!=null && pr(inner).at_ite.next == null) pr(inner).at_ite = null;
+                var ite = length==1 ? null : pr(inner).inner.iterator_at(length-2);
+                ret = ite == null ? pr(inner).inner.front() : ite.next.elem();
+                var retx = closure(ret);
+                if(pr(inner).subber!=null) pr(inner).subber(retx);
+                if(!pr(inner).dontremove)
+                    pr(inner).inner.erase(ite);
+            }else {
+                ret = pr(inner).inner.front();
+                var retx = closure(ret);
+                if(pr(inner).subber!=null) pr(inner).subber(retx);
+                if(!pr(inner).dontremove)
+                    pr(inner).inner.pop();
+            }
+
+            pr(inner).invalidate();
+            var retx = closure(ret);
+            return retx;
+        }
+
+        !!/**
+        !! * Insert element into list in most effecient way.
+        !! * <br/><br/>
+        !! * This method will defer to either the push or unshift function
+        !! * depending on which is most effecient in the context.
+        !! * <br/><br/>
+        !! * If order of elements is not important then you should always use
+        !! * this function to insert elements.
+        !! *
+        !! * @param obj The object to insert.
+        !! * @return True if object was successfuly inserted.
+        !! * @throws # If list is immutable
+        !! */
+        keep public inline function add(obj:T):Bool {
+            return if(pr(inner).reverse_flag) push(obj) else unshift(obj);
+        }
+
+        !!/**
+        !! * Remove element from list.
+        !! * <br/><br/>
+        !! * This is a linear time operation.
+        !! *
+        !! * @param obj The object to remove
+        !! * @return True if object was removed from list.
+        !! * @throws # If list is immutable
+        !! */
+        keep public function remove(obj:T):Bool {
+            DEBUG(if(pr(inner).immutable) throw "Error: "+$str(T)+"List is immutable";)
+            pr(inner).modify_test();
+            #if use_inline pr(inner).valmod(); #else pr(vm)(); #end
+
+            var ret;
+            Exists(x,pr(inner).inner, x==erusolc(obj), ret);
+            if(ret) {
+                if(pr(inner).subber!=null) pr(inner).subber(obj);
+                if(!pr(inner).dontremove)
+                    pr(inner).inner.remove(erusolc(obj));
+                pr(inner).invalidate();
+            }
+            return ret;
+        }
+
+        !!/**
+        !! * Clear the list, removing all elements.
+        !! *
+        !! * @throws # If list is iummutable
+        !! */
+        keep public function clear() {
+            DEBUG(if(pr(inner).immutable) throw "Error: "+$str(T)+"List is immutable";)
+            if(pr(inner).reverse_flag) {
+                while(!empty()) pop();
+            }else {
+                while(!empty()) shift();
+            }
+        }
+
+        !!/**
+        !! * Test if list is empty or not.
+        !! *
+        !! * @return True if list is empty.
+        !! */
+        keep public inline function empty() {
+            #if use_inline
+                if(use_accept) return length==0;
+                else return pr(inner).inner.empty();
+            #else
+                return length==0;
+            #end
+        }
+
+        !!/**
+        !! * Return Haxe iterator for list.
+        !! * <br/><br/>
+        !! * Use of this iterator, whilst stylistically better in Haxe should not
+        !! * be used, in preference for use of the foreach function which will
+        !! * not require allocation of an iterator object.
+        !! * <br/><br/>
+        !! * Equally in AS3, the foreach method should be the preferred way to iterate.
+        !! */
+        keep public inline function iterator() {
+            #if use_inline pr(inner).valmod(); #else pr(vm)(); #end
+            return T`Iterator.get(this);
+        }
+
+        !!/**
+        !! * Produce a possibly deep copy of list.
+        !! *
+        !! * @param deep If true, then each element will have its own copy
+        !! *             function called instead of simply having its
+        !! *             reference copied over.
+        !! * @return     The copied list.
+        !! */
+        keep public function copy(deep:Bool=false) {
+            var ret = new T`List();
+            for(i in this) ret.push(deep ? copy_elt(i) : i);
+            return ret;
+        }
+
+        !!/**
+        !! * Merge given list into this one.
+        !! * <br/><br/>
+        !! * The result is that this list will have all objects from the argument
+        !! * that were not already in the list inserted. You should make no
+        !! * assumption about the order of these insertions.
+        !! *
+        !! * @param xs The list to merge.
+        !! * @throws # If xs argument is null.
+        !! */
+        keep public function merge(xs:T`List):Void {
+            DEBUG(if(xs==null) throw "Error: Cannot merge with null list";)
+            for(x in xs) {
+                if(!has(x)) add(x);
+            }
+        }
+
+        !!/**
+        !! * Construct a new list.
+        !! */
+        public function new() {
+            pr(inner) = new PR(T`List)();
+            pr(inner).outer = this;
+        }
+
+        !!/**
+        !! * @private
+        !! */
+        @:$keep public function toString() {
+            var ret = "[";
+            var fst = true;
+            for(i in this) {
+                if(!fst) ret += ",";
+                ret += (i==null ? "NULL" : i.toString());
+                fst = false;
+            }
+            return ret+"]";
+        }
+
+        !!/**
+        !! * Iterate over list applying function.
+        !! * <br/><br/>
+        !! * Any exception thrown by the supplied function will be treat as a
+        !! * signal to halt iteration acting as a 'break' statement.
+        !! * <br/><br/>
+        !! * This method should be preferred to using standard haxe iteration
+        !! * as there will be no allocation of an iterator object.
+        !! * <pre>
+        !! * list.foreach(function (obj) {
+        !! *     if (ignore_object(obj)) return; //acts as a 'continue' statement
+        !! *     if (halt_iteration(obj)) throw "": //acts as a 'break' statement
+        !! * });
+        !! * </pre>
+        !! *
+        !! * @param lambda The function to apply to each argument.
+        !! * @return A reference to 'this' list.
+        !! * @throws # If lambda argument is null.
+        !! */
+        keep public inline function foreach(lambda:T->Void):T`List {
+            DEBUG(if(lambda==null) throw "Error: Cannot execute null on list elements";)
+            // Technically we 'do' have an iterator object, but we automatically
+            // release it to an object pool for re-use!
+            var it = iterator();
+            while(it.hasNext()) {
+                try {
+                    lambda(it.next());
+                }catch(e:Dynamic) {
+                    RELEASE_ITERATOR(T`Iterator,it);
+                    break;
+                }
+            }
+            return this;
+        }
+
+        !!/**
+        !! * Iterate over list filtering elements.
+        !! * <br/><br/>
+        !! * The given function will be applied to each element, whenever the
+        !! * function returns false, the element will be removed from the list.
+        !! * <br/><br/>
+        !! * Any exception thrown by the supplied function will be treat as a
+        !! * signal to halt iteration acting as a 'break' statement.
+        !! * <br/><br/>
+        !! * This method is to be greatly preferred for filtering logic as
+        !! * it is otherwise unsafe to modify the list during an iteration.
+        !! * <br/><br/>
+        !! * An example of using this method to clean up a list whilst performing
+        !! * actions on the elements.
+        !! * <pre>
+        !! * list.filter(function (obj) {
+        !! *    // perform clean up with obj
+        !! *    return false; // remove from list.
+        !! * });
+        !! * </pre>
+        !! *
+        !! * @param lambda The function to apply to each argument, deciding if
+        !! *               element should be removed.
+        !! * @return A reference to 'this' list.
+        !! * @throws # If lambda argument is null.
+        !! */
+        keep public function filter(lambda:T->Bool):T`List {
+            DEBUG(if(lambda==null) throw "Error: Cannot select elements of list with null";)
+            var i = 0;
+            while(i<length) {
+                var x = at(i);
+                try {
+                    if(lambda(x))
+                        i++;
+                    else
+                        remove(x);
+                }catch(e:Dynamic) {
+                    break;
+                }
+            }
+            return this;
+        }
+    }
+
+    PRWrapList(T,ListT,IteT)
+);
+
+$(mixin global WrapListIterator(T,ListT,IteT, defs) WrapListIterator(T,ListT,IteT,defs,false));
+$(mixin global WrapListIterator(T,ListT,IteT, defs, noFinal)
+    $(mixin accept(x) true);
+    $(mixin use_accept false);
+
+    $(mixin inline $inline);
+    $(mixin use_inline true);
+
+    $(mixin copy_elt(o) { DEBUG(throw "Error: "+$str(T)+" is not a copyable type"; ) null; });
+
+    $(mixin reversal(i) (length-1-i));
+
+    !!/**
+    !! * Haxe Iterator<T> compatible iterator over Nape list.
+    !! */
+    #if !noFinal @:final #end class T`Iterator {
+        !!/**
+        !! * @private
+        !! */
+        public var pr(inner):T`List = null;
+        !!/**
+        !! * @private
+        !! */
+        public var pr(i):Int = 0;
+        !!/**
+        !! * @private
+        !! */
+        public var pr(critical):Bool = false;
+
+        //MixPool(T`Iterator) //cannot use this due to method 'next'
+        CLEARITERATOR(T`Iterator)
+        !!/**
+        !! * @private
+        !! */
+        public static var pr(pool):T`Iterator = null;
+        !!/**
+        !! * @private
+        !! */
+        public var pr(next):T`Iterator = null;
+
+        !!/**
+        !! * @private
+        !! */
+        public function new() {
+            DEBUG(if(!PR(T`List).internal)
+                throw "Error: Cannot instantiate "+$str(T)+"Iterator derp!";
+            )
+        }
+
+        !!/**
+        !! * Create iterator for Nape list.
+        !! * <br/><br/>
+        !! * There is no specific reason to use this over: <code>list.iterator()</code>
+        !! * especcialy since this requires writing the class name :)
+        !! * (This function is used internally)
+        !! *
+        !! * @param list The Nape list to create iterator for.
+        !! * @return     An iterator over the Nape list.
+        !! */
+        public static function get(list:T`List) {
+            var ret = if(pr(pool)==null) {
+                PR(T`List).internal = true;
+                var ret = new T`Iterator();
+                PR(T`List).internal = false;
+                ret;
+            }else {
+                var r = pr(pool);
+                pr(pool) = r.pr(next);
+                r;
+            }
+            ret.pr(i) = 0;
+            ret.pr(inner) = list;
+            ret.pr(critical) = false;
+            return ret;
+        }
+
+        $(mixin file RELEASE_ITERATOR(I,i) {
+            i.pr(next) = I.pr(pool);
+            I.pr(pool) = i;
+            i.pr(inner) = null;
+        });
+
+        !!/**
+        !! * Check if there are any elements remaining.
+        !! *
+        !! * @return True if there are more elements to iterator over.
+        !! */
+        keep public inline function hasNext() {
+            #if use_inline pr(inner).pr(inner).valmod(); #else pr(inner).pr(vm)(); #end
+            var length = pr(inner).length;
+            pr(critical) = true;
+
+            if(pr(i)<length) {
+                return true;
+            } else {
+                //Free(T`Iterator,this);
+                RELEASE_ITERATOR(T`Iterator, this);
+                return false;
+            }
+        }
+
+        !!/**
+        !! * Return next element in list.
+        !! *
+        !! * @return The next element in iteration.
+        !! */
+        keep public inline function next() {
+            pr(critical) = false;
+            return pr(inner).at(pr(i)++);
+        }
+    }
+);

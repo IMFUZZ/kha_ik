@@ -1,0 +1,196 @@
+package nape.constraint;
+$(import);
+
+withConstraint(
+!!/**
+!! * DistanceJoint limiting the distance between two local anchor points of Bodies.
+!! * <br/><br/>
+!! * The equation for this constraint could be written like:
+!! * <pre>
+!! * jointMin <= distance(body2.localPointToWorld(anchor2), body1.localPointToWorld(anchor1)) <= jointMax
+!! * </pre>
+!! * This joint is not designed to work when <code> jointMin = jointMax = 0 </code> and constraint is
+!! * stiff. In this instance you should use a PivotJoint instead.
+!! */
+@:final class DistanceJoint extends Constraint {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner_zn):PR(DistanceJoint) = null;
+
+    !!/**
+    !! * First Body in constraint.
+    !! * <br/><br/>
+    !! * This value may be null, but trying to simulate the constraint whilst
+    !! * this body is null will result in an error.
+    !! */
+    wrap_body_new(body1, b1, $(mixin isNew(b) pr(inner_zn).b2 != b) isNew)
+
+    !!/**
+    !! * Second Body in constraint.
+    !! * <br/><br/>
+    !! * This value may be null, but trying to simulate the constraint whilst
+    !! * this body is null will result in an error.
+    !! */
+    wrap_body_new(body2, b2, $(mixin isNew(b) pr(inner_zn).b1 != b) isNew)
+
+    !!/**
+    !! * Anchor point on first Body.
+    !! * <br/><br/>
+    !! * This anchor point is defined in the local coordinate system of body1.
+    !! */
+    wrap_anchor_new(anchor1, a1)
+
+    !!/**
+    !! * Anchor point on second Body.
+    !! * <br/><br/>
+    !! * This anchor point is defined in the local coordinate system of body2.
+    !! */
+    wrap_anchor_new(anchor2, a2)
+
+    !!/**
+    !! * Lower bound for constraint.
+    !! * <br/><br/>
+    !! * This value must be less than or equal to jointMax, and greater equal to 0.
+    !! */
+    property(jointMin, Float, {
+        return pr(inner_zn).jointMin;
+    }, {
+        pr(inner).immutable_midstep("DistanceJoint::jointMin");
+        DEBUG(
+            if (isNaN(jointMin)) {
+                throw "Error: DistanceJoint::jointMin cannot be NaN";
+            }
+            if (jointMin < 0) {
+                throw "Error: DistanceJoint::jointMin must be >= 0";
+            }
+        )
+
+        if (this.jointMin != jointMin) {
+            pr(inner_zn).jointMin = jointMin;
+            pr(inner).wake();
+        }
+    })
+
+    !!/**
+    !! * Upper bound for constraint.
+    !! * <br/><br/>
+    !! * This value must be greater than or equal to jointMin.
+    !! */
+    property(jointMax, Float, {
+        return pr(inner_zn).jointMax;
+    }, {
+        pr(inner).immutable_midstep("DistanceJoint::jointMax");
+        DEBUG(
+            if (isNaN(jointMax)) {
+                throw "Error: DistanceJoint::jointMax cannot be NaN";
+            }
+            if (jointMax < 0) {
+                throw "Error: DistanceJoint::jointMax must be >= 0";
+            }
+        )
+        if (this.jointMax != jointMax) {
+            pr(inner_zn).jointMax = jointMax;
+            pr(inner).wake();
+        }
+    })
+
+    !!/**
+    !! * Determine if constraint is slack.
+    !! * <br/><br/>
+    !! * This constraint is slack if the positional error is within
+    !! * the bounds of (jointMin, jointMax).
+    !! *
+    !! * @return True if positional error of constraint is between the limits
+    !! *              indicating that the constraint is not doing any work.
+    !! * @throws # If either of the bodies is null.
+    !! */
+    public inline function isSlack():Bool {
+        DEBUG(
+            if (body1 == null || body2 == null) {
+                throw "Error: Cannot compute slack for DistanceJoint if either body is null.";
+            }
+        )
+        return pr(inner_zn).slack;
+    }
+
+    !!/**
+    !! * Construct a new DistanceJoint.
+    !! *
+    !! * @param body1 The first body in DistanceJoint.
+    !! * @param body2 The second body in DistanceJoint.
+    !! * @param anchor1 The first local anchor for joint.
+    !! * @param anchor2 The second local anchor for joint.
+    !! * @param jointMin The lower bound for constraint.
+    !! * @param jointMax The upper bound for constraint.
+    !! * @return The constructed DistanceJoint.
+    !! */
+    flibopts(0)
+    public function new(
+        body1:Null<Body>,
+        body2:Null<Body>,
+        anchor1:Vec2,
+        anchor2:Vec2,
+        jointMin:Float,
+        jointMax:Float
+    ) {
+        pr(inner_zn) = new PR(DistanceJoint)();
+        pr(inner) = pr(inner_zn);
+        pr(inner).outer = this;
+        pr(inner_zn).outer_zn = this;
+
+        DEBUG(Constraint.pr(internalAlloc) = true; super(); Constraint.pr(internalAlloc) = false;)
+        RELEASE(super();)
+
+        this.body1 = body1;
+        this.body2 = body2;
+        this.anchor1 = anchor1;
+        this.anchor2 = anchor2;
+        this.jointMin = jointMin;
+        this.jointMax = jointMax;
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! * <br/><br/>
+    !! * For this constraint, the MatMN will be 1x1.
+    !! */
+    public override function impulse():MatMN {
+        var ret = new MatMN(1,1);
+        ret.setx(0, 0, pr(inner_zn).jAcc);
+        return ret;
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! */
+    public override function bodyImpulse(body:Body):Vec3 {
+        DEBUG(
+            if (body == null) {
+                throw "Error: Cannot evaluate impulse on null body";
+            }
+            if (body != body1 && body != body2) {
+                throw "Error: Body is not linked to this constraint";
+            }
+        )
+
+        if (!active) {
+            return Vec3.get();
+        }
+        else {
+            return pr(inner_zn).bodyImpulse(body.pr(inner));
+        }
+    }
+
+    !!/**
+    !! * @inheritDoc
+    !! */
+    public override function visitBodies(lambda:Body->Void) {
+        if (body1 != null) {
+            lambda(body1);
+        }
+        if (body2 != null && body2 != body1) {
+            lambda(body2);
+        }
+    }
+})

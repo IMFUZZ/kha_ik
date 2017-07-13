@@ -1,0 +1,647 @@
+package zpp_nape.shape;
+$(import);
+
+class PR(Polygon) extends PR(Shape) {
+    public var outer_zn:Polygon = null;
+
+    //----------------------------------------------------------------------------------------------
+
+    public var lverts:MixList(PR(Vec2)) = null; public var wrap_lverts:Vec2List = null;
+    public var gverts:MixList(PR(Vec2)) = null; public var wrap_gverts:Vec2List = null;
+
+    public var edges:List(PR(Edge)) = null; public var wrap_edges:EdgeList = null;
+    public var edgeCnt:Int = 0;
+
+    public var reverse_flag:Bool = false;
+
+    //----------------------------------------------------------------------------------------------
+
+    public function __clear() {}
+
+    //----------------------------------------------------------------------------------------------
+
+    //previously inner lambdas lol
+    private function lverts_pa_invalidate(x:PR(Vec2)) {
+        invalidate_lverts();
+    }
+    DEBUG(private function lverts_pa_immutable() {
+        if(body!=null && body.isStatic() && body.space!=null)
+            throw "Error: Cannot modify local vertex of Polygon added to a static body whilst within a Space";
+    })
+    private function gverts_pa_validate() {
+        DEBUG(if(body==null)
+            throw "Error: World vertex only makes sense when Polygon is contained in a rigid body";
+        )
+        validate_gverts();
+    }
+
+    //previously lambdas
+    private function lverts_post_adder(x:Vec2) {
+        x.pr(inner)._invalidate = lverts_pa_invalidate;
+        DEBUG(x.pr(inner)._isimmutable = lverts_pa_immutable;)
+
+        var ite:PR(Vec2) = null;
+        var ite2:Node(PR(Edge)) = null;
+        Iter(i, lverts, {
+            if(i==x.pr(inner)) cx_break;
+            else {
+                ite = ite == null ? gverts.begin() : ite.next;
+                ite2 = ite2 == null ? edges.begin() : ite2.next;
+            }
+        });
+        var vec = PR(Vec2).get(0,0,true);
+        gverts.insert(ite,vec);
+
+        if(lverts.begin().next!=null) {
+            if(lverts.begin().next.next==null) {
+                var ed:PR(Edge); Get(PR(Edge), ed); ed.polygon = this; edges.add(ed);
+                var ed:PR(Edge); Get(PR(Edge), ed); ed.polygon = this; edges.add(ed);
+                edgeCnt += 2;
+            }else {
+                var ed:PR(Edge); Get(PR(Edge), ed); ed.polygon = this;
+                edges.insert(ite2,ed);
+                edgeCnt++;
+            }
+        }
+
+        vec._validate = gverts_pa_validate;
+    }
+    private function lverts_subber(x:Vec2) {
+        cleanup_lvert(x.pr(inner));
+    }
+    private function lverts_invalidate(_) {
+        invalidate_lverts();
+    }
+    private function lverts_validate() {
+        validate_lverts();
+    }
+    DEBUG(private function lverts_modifiable() {
+        immutable_midstep("Polygon::localVerts");
+        DEBUG(if(body!=null && body.isStatic() && body.space!=null)
+            throw "Error: Cannot modifiy shapes of static object once added to Space";
+        )
+    })
+
+    //----------------------------------------------------------------------------------------------
+
+    //previously lambdas
+    private function gverts_validate() {
+        validate_gverts();
+    }
+    private function edges_validate() {
+        validate_lverts();
+    }
+
+    //----------------------------------------------------------------------------------------------
+
+    keep public function getlverts() {
+        var me = this;
+        wrap_lverts = PR(MixVec2List).get(lverts);
+
+        wrap_lverts.pr(inner).post_adder = lverts_post_adder;
+        wrap_lverts.pr(inner).subber = lverts_subber;
+        wrap_lverts.pr(inner)._invalidate = lverts_invalidate;
+        wrap_lverts.pr(inner)._validate = lverts_validate;
+        DEBUG(wrap_lverts.pr(inner)._modifiable = lverts_modifiable;)
+        wrap_lverts.pr(inner).reverse_flag = reverse_flag;
+    }
+
+    public function getgverts() {
+        var me = this;
+        wrap_gverts = PR(MixVec2List).get(gverts,true);
+        wrap_gverts.pr(inner).reverse_flag = reverse_flag;
+        wrap_gverts.pr(inner)._validate = gverts_validate;
+    }
+
+    public function getedges() {
+        var me = this;
+        wrap_edges = PR(EdgeList).get(edges,true);
+        wrap_edges.pr(inner).reverse_flag = reverse_flag;
+        wrap_edges.pr(inner)._validate = edges_validate;
+    }
+
+    //----------------------------------------------------------------------------------------------
+
+    public var inv(lverts):Bool = false;
+    public function invalidate_lverts() {
+        ///dependancy checked
+        invalidate_laxi();
+        invalidate_area_inertia();
+        invalidate_angDrag();
+        invalidate_localCOM();
+        invalidate_gverts();
+        inv(lverts) = true;
+        inv(valid) = true;
+        inv(sanitation) = true;
+
+        if(body!=null) body.wake();
+    }
+
+    public var inv(laxi):Bool = false;
+    public function invalidate_laxi() {
+        ///dependancy checked
+        invalidate_gaxi();
+        invalidate_sweepRadius();
+        inv(laxi) = true;
+    }
+
+    public var inv(gverts):Bool = false;
+    public function invalidate_gverts() {
+        ///dependancy checked
+        invalidate_aabb();
+        inv(gverts) = true;
+    }
+
+    public var inv(gaxi):Bool = false;
+    public function invalidate_gaxi() {
+        ///dependancy checked
+        inv(gaxi) = true;
+    }
+
+    //----------------------------------------------------------------------------------------------
+
+    public var inv(valid):Bool = false;
+    public var validation:ValidationResult;
+    public function valid() {
+        if(inv(valid)) {
+            inv(valid) = false;
+            splice_collinear();
+            if(lverts.size()<3)
+                return validation = ValidationResult.DEGENERATE;
+            else {
+                validate_lverts();
+                validate_area_inertia();
+                if(area<Config.epsilon)
+                    return validation = ValidationResult.DEGENERATE;
+                else {
+                    var neg = false; var pos = false;
+                    Iter3_noite(u,v,w,lverts,{
+                        vec_new(a); vec_sub(w.,v.,a);
+                        vec_new(b); vec_sub(v.,u.,b);
+                        var dot = vec_cross(a,b);
+                        if     (dot> Config.epsilon) pos = true;
+                        else if(dot<-Config.epsilon) neg = true;
+                        if(pos&&neg)
+                            cx_break;
+                    });
+                    if(pos&&neg)
+                        return validation = ValidationResult.CONCAVE;
+                    else {
+                        var cont = true;
+                        Iter2_noite(u,v,lverts,{
+                            if(!cont) cx_break;
+                            Iter2_noite(a,b,lverts,{
+                                if(u==a || u==b || v==a || v==b) cx_continue;
+
+                                vec_new(s); vec_sub(u.,a.,s);
+                                vec_new(v); vec_sub(v.,u.,v);
+                                vec_new(q); vec_sub(b.,a.,q);
+
+                                var den = vec_cross(q,v);
+                                if(den*den > Config.epsilon) {
+                                    den = 1/den;
+                                    var t = vec_cross(s,q)*den;
+                                    if(t>Config.epsilon && t<1-Config.epsilon) {
+                                        var s = vec_cross(s,v)*den;
+                                        if(s>Config.epsilon && s<1-Config.epsilon) {
+                                            cont = false;
+                                            cx_break;
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                        if(!cont)
+                            return validation = ValidationResult.SELF_INTERSECTING;
+                        else
+                            return validation = ValidationResult.VALID;
+                    }
+                }
+            }
+        }else
+            return validation;
+    }
+
+    //----------------------------------------------------------------------------------------------
+
+    public function validate_lverts() {
+        ///dependancy checked
+        ///
+        ///assertion on addition of splice_collinear()
+        /// this may cause an invalidation of the lvert dependencies
+        /// but by this fact, any validation of the dependencies will
+        /// first validate the lverts and so all is well!
+        if(inv(lverts)) {
+            inv(lverts) = false;
+            if(lverts.size()>2) {
+                validate_area_inertia();
+                if(area<0) {
+                    reverse_vertices();
+                    area = -area;
+                }
+            }
+        }
+    }
+
+    //before local vertex is removed, peform necessary cleanup.
+    public function cleanup_lvert(x:PR(Vec2)) {
+        var ite:PR(Vec2) = null;
+        var ite2:Node(PR(Edge)) = null;
+        Iter(i, lverts, {
+            if(i==x) cx_break;
+            else {
+                ite = ite == null ? gverts.begin() : ite.next;
+                ite2 = ite2==null ? edges.begin() : ite2.next;
+            }
+        });
+        var rem = (ite==null ? gverts.front() : ite.next.elem());
+        gverts.erase(ite);
+        Free(PR(Vec2),rem);
+
+        if (edgeCnt == 2) {
+            var rem = edges.pop_unsafe();
+            Free(PR(Edge),rem);
+            rem = edges.pop_unsafe();
+            Free(PR(Edge),rem);
+            edgeCnt = 0;
+        }else if (edgeCnt != 0) {
+            var rem = (ite2==null ? edges.front() : ite2.next.elem());
+            edges.erase(ite2);
+            Free(PR(Edge),rem);
+            edgeCnt--;
+        }
+    }
+
+    // remove any collinear and thus dangerously redundant vertices.
+    //
+    // careful to ensure that the Polygon's concept of collinear vertices
+    // is equal to that of the PartitionedPoly used by the decomposition
+    // routines for monotone/convex/triangular
+    public var inv(sanitation):Bool = false;
+    flibmdel public inline function splice_collinear() {
+        if (inv(sanitation)) {
+            inv(sanitation) = false;
+            splice_collinear_real();
+        }
+    }
+    public function splice_collinear_real() {
+        // ignore polygons < 3 vertices.
+        if (lverts.begin() == null) return;
+        if (lverts.begin().next == null) return;
+        if (lverts.begin().next.next == null) return;
+
+        // strip equal vertices first
+        var pre = null;
+        var cur = lverts.begin();
+        while (cur != null) {
+            var nxt = if (cur.next == null) lverts.begin() else cur.next;
+            var u = cur.elem();
+            var v = nxt.elem();
+
+            if (vec_dsq(u., v.) < Config.epsilon*Config.epsilon) {
+                // remove vertex u/cur
+                cleanup_lvert(cur.elem());
+                cur = lverts.erase(pre);
+            }
+            else {
+                pre = cur;
+                cur = cur.next;
+            }
+        }
+
+        if (lverts.empty()) return;
+
+        // strip collinear vertices
+        // due to epsilon, may need more than one pass.
+        var removed;
+        do {
+            removed = false;
+            var pre = lverts.begin();
+            while (pre != null) {
+                var cur = if (pre.next == null) lverts.begin() else pre.next;
+                var nxt = if (cur.next == null) lverts.begin() else cur.next;
+                var u = pre.elem(); var v = cur.elem(); var w = nxt.elem();
+
+                vec_new(a); vec_sub(v., u., a);
+                vec_new(b); vec_sub(w., v., b);
+                var crs = vec_cross(a, b);
+                if (crs * crs >= Config.epsilon * Config.epsilon) {
+                    // keep vertex v/cur
+                    pre = pre.next;
+                }
+                else {
+                    // remove vertex v/cur
+                    cleanup_lvert(cur.elem());
+                    lverts.erase(pre.next == null ? null : pre);
+                    removed = true;
+                    pre = pre.next;
+                }
+            }
+        }
+        while (removed);
+    }
+
+    public function reverse_vertices() {
+        lverts.reverse();
+        gverts.reverse();
+        edges.reverse();
+        var ite = edges.iterator_at(edgeCnt-1);
+        var elem = edges.pop_unsafe();
+        edges.insert(ite,elem);
+
+        reverse_flag = !reverse_flag;
+        if(wrap_lverts!=null) wrap_lverts.pr(inner).reverse_flag = reverse_flag;
+        if(wrap_gverts!=null) wrap_gverts.pr(inner).reverse_flag = reverse_flag;
+        if(wrap_edges!=null) wrap_edges.pr(inner).reverse_flag = reverse_flag;
+    }
+
+    public function validate_laxi() {
+        ///dependancy checked
+        if(inv(laxi)) {
+            inv(laxi) = false;
+            validate_lverts();
+
+            var ite = edges.begin();
+            Iter2_fast(u,v, lverts, {
+                var edge = ite.elem(); ite = ite.next;
+                edge.lp0 = u;
+                edge.lp1 = v;
+
+                vec_new(d); vec_sub(u.,v.,d);
+                var l = vec_length_slow(d);
+                edge.length = l;
+                vec_diveq(d,l); vec_perp(d);
+
+                edge.lprojection = vec_dot(d,u.);
+
+                vec_set(edge.lnorm, d);
+                if(edge.wrap_lnorm!=null) vec_set(edge.wrap_lnorm.pr(inner).,d);
+            });
+        }
+    }
+    flibmdel public inline function validate_gverts() {
+        ///dependancy checked
+        if(inv(gverts)) {
+            if(body!=null) {
+                inv(gverts) = false;
+
+                validate_lverts();
+                body.validate_axis();
+                var li = lverts.begin();
+                Iter(g, gverts, {
+                    var l = li.elem(); li = li.next;
+                    vec_localglobal(body.axis,body.pos, l., g.);
+                });
+            }
+        }
+    }
+    /*used by nape-hacks*/
+    /*flibmdel*/ public inline function validate_gaxi() {
+        ///dependancy checked
+        if(inv(gaxi)) {
+            if(body!=null) {
+                inv(gaxi) = false;
+                validate_laxi();
+                body.validate_axis();
+                validate_gverts();
+
+                var ite = edges.begin();
+                Iter2_fast(u,v, gverts, {
+                    var e = ite.elem(); ite = ite.next;
+                    e.gp0 = u;
+                    e.gp1 = v;
+
+                    vec_rotate(e.lnorm, body.axis, e.gnorm);
+                    e.gprojection = vec_dot(body.pos,e.gnorm) + e.lprojection;
+                    if(e.wrap_gnorm!=null) vec_set(e.wrap_gnorm.pr(inner).,e.gnorm);
+
+                    e.tp0 = vec_cross(e.gnorm,e.gp0.);
+                    e.tp1 = vec_cross(e.gnorm,e.gp1.);
+                });
+            }
+        }
+    }
+
+    //----------------------------------------------------------------------------------------------
+
+    flibmdel public inline function __validate_aabb() {
+        ///dependancy checked
+        validate_gverts();
+        DEBUG(if(lverts.empty())
+            throw "Error: An empty polygon has no meaningful bounds";
+        )
+
+        var p0 = gverts.front();
+        vec_set(aabb.min,p0.);
+        vec_set(aabb.max,p0.);
+        IterIte(p, gverts, gverts.begin().next, {
+            if(p.x < aabb.minx) aabb.minx = p.x;
+            if(p.x > aabb.maxx) aabb.maxx = p.x;
+            if(p.y < aabb.miny) aabb.miny = p.y;
+            if(p.y > aabb.maxy) aabb.maxy = p.y;
+        });
+    }
+
+    flibmdel public inline function _force_validate_aabb() {
+        //presumption that axis of body is welldefined.
+        var li = lverts.begin();
+        var p0 = gverts.front();
+        var l = li.elem(); li = li.next;
+        vec_localglobal(body.axis,body.pos, l., p0.);
+
+        vec_set(aabb.min, p0.);
+        vec_set(aabb.max, p0.);
+        IterIte(p, gverts, gverts.begin().next, {
+            var l = li.elem(); li = li.next;
+            vec_localglobal(body.axis,body.pos, l., p.);
+
+            if(p.x < aabb.minx) aabb.minx = p.x;
+            if(p.x > aabb.maxx) aabb.maxx = p.x;
+            if(p.y < aabb.miny) aabb.miny = p.y;
+            if(p.y > aabb.maxy) aabb.maxy = p.y;
+        });
+    }
+
+    public function __validate_sweepRadius() {
+        ///dependancy checked
+        var maxRadius = 0.0;
+        var minRadius = 0.0;
+
+        validate_laxi();
+        Iter(x, lverts, {
+            var r = vec_lsq(x.);
+            if (r > maxRadius) {
+                maxRadius = r;
+            }
+        });
+
+        Iter(e, edges, {
+            if (e.lprojection < minRadius) {
+                minRadius = e.lprojection;
+                if (minRadius < 0) cx_break;
+            }
+        });
+        if (minRadius < 0) minRadius = 0;
+
+        sweepRadius = Math.sqrt(maxRadius);
+        sweepCoef = sweepRadius - minRadius;
+    }
+
+    public function __validate_area_inertia() {
+        ///dependancy checked
+        if(lverts.begin()==null || lverts.begin().next==null || lverts.begin().next.next==null) {
+            area = 0;
+            inertia = 0;
+        }else {
+            area = 0.0;
+            var s1 = 0.0; var s2 = 0.0;
+            Iter3_fast(u,v,w, lverts, {
+                var a = vec_cross(u.,v.); var b = vec_lsq(v.) + vec_dot(v.,u.) + vec_lsq(u.);
+                s1 += a*b; s2 += a;
+                area += v.x * (w.y - u.y);
+            });
+            inertia = s1/(6*s2);
+            area *= 0.5;
+
+            if(area<0) {
+                area = -area;
+                reverse_vertices();
+            }
+        }
+    }
+    public function __validate_angDrag() {
+        ///dependancy checked
+        DEBUG(if(lverts.size()<3)
+            throw "Error: Polygon's with less than 3 vertices have no meaningful angDrag";
+        )
+        validate_area_inertia();
+        validate_laxi();
+
+        var accum = 0.0;
+        var ei = edges.begin();
+        var perim = 0.0;
+        Iter2(u,v, lverts, {
+            var edge = ei.elem(); ei = ei.next;
+            perim += edge.length;
+            vec_new(d); vec_sub(v.,u.,d);
+
+            accum += edge.length*Config.fluidAngularDragFriction*material.dynamicFriction*edge.lprojection*edge.lprojection;
+
+            var t = -vec_cross(edge.lnorm,u.)/vec_cross(edge.lnorm,d);
+            if(t>0) {
+                var ta = if(t>1) 1 else t;
+                vec_new(c); vec_set(c,u.); vec_addeq(c,d,ta);
+
+                var dota = vec_cross(u.,edge.lnorm);
+                var dotb = vec_cross(c,edge.lnorm);
+                var dots = (dotb*dotb*dotb - dota*dota*dota)/(3*(dotb-dota));
+                accum += dots*ta*edge.length*Config.fluidAngularDrag;
+            }
+            if(t<1) {
+                var tb = if(t<0) 0 else t;
+                vec_new(c); vec_set(c,u.); vec_addeq(c,d,tb);
+
+                var dota = vec_cross(c,edge.lnorm);
+                var dotb = vec_cross(v.,edge.lnorm);
+                var dots = (dotb*dotb*dotb - dota*dota*dota)/(3*(dotb-dota));
+                accum += dots*Config.fluidVacuumDrag*(1-tb)*edge.length*Config.fluidAngularDrag;
+            }
+        });
+
+        angDrag = accum/(inertia*perim);
+    }
+    flibmdel public inline function __validate_localCOM() {
+        ///dependancy checked
+        DEBUG(if(lverts.empty())
+            throw "Error: An empty polygon has no meaningful localCOM";
+        )
+        if(lverts.begin().next==null) vec_set(localCOM,lverts.front().);
+        else if(lverts.begin().next.next==null) {
+            vec_set(localCOM,lverts.front().);
+            vec_addeq(localCOM,lverts.begin().next.elem().);
+            vec_muleq(localCOM,0.5);
+        }else {
+            vec_set(localCOM,0,0);
+            var area = 0.0;
+            Iter3_fast(u,v,w, lverts, {
+                area += v.x * (w.y - u.y);
+                var cf = vec_cross(v.,w.);
+                localCOMx += (v.x+w.x)*cf;
+                localCOMy += (v.y+w.y)*cf;
+            });
+            area = 1/(3*area);
+            vec_muleq(localCOM,area);
+        }
+    }
+
+    //----------------------------------------------------------------------------------------------
+
+    //used to be lambdas
+    private function localCOM_validate() {
+        DEBUG(if(lverts.empty())
+            throw "Error: An empty polygon does not have any meaningful localCOM";
+        )
+        validate_localCOM();
+    }
+    private function localCOM_invalidate(x:PR(Vec2)) {
+        validate_localCOM();
+        vec_new(del, 0,0);
+        vec_sub(x., localCOM, del);
+
+        Iter(p, lverts, vec_addeq(p., del));
+        invalidate_lverts();
+    }
+
+    public function setupLocalCOM() {
+        wrap_localCOM = Vec2.get(localCOMx,localCOMy);
+        wrap_localCOM.pr(inner)._inuse = true;
+        wrap_localCOM.pr(inner)._validate = localCOM_validate;
+        wrap_localCOM.pr(inner)._invalidate = localCOM_invalidate;
+    }
+
+    //----------------------------------------------------------------------------------------------
+
+    public function new() {
+        super(Flag(ShapeType,POLYGON));
+        polygon = this;
+
+        lverts = new MixList(PR(Vec2))();
+        gverts = new MixList(PR(Vec2))();
+        edges = new List(PR(Edge))();
+        edgeCnt = 0;
+    }
+
+    //----------------------------------------------------------------------------------------------
+
+    public function __translate(dx:Float,dy:Float) {
+        Iter(p,lverts,vec_addeq(p.,d));
+        invalidate_lverts();
+    }
+    public function __scale(sx:Float,sy:Float) {
+        Iter(p,lverts,{
+            p.x *= sx;
+            p.y *= sy;
+        });
+        invalidate_lverts();
+    }
+    public function __rotate(ax:Float,ay:Float) {
+        Iter(p,lverts,{
+            vec_new(temp); vec_rotate(p.,a,temp);
+            vec_set(p.,temp);
+        });
+        invalidate_lverts();
+    }
+    public function __transform(mat:Mat23) {
+        Iter(p,lverts,{
+            mat_transform_hom(mat.,p.);
+        });
+        invalidate_lverts();
+    }
+
+    //----------------------------------------------------------------------------------------------
+
+    public function __copy() {
+        var ret = new Polygon(outer_zn.localVerts).pr(inner_zn);
+        return ret;
+    }
+}

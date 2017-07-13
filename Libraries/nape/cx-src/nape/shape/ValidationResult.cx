@@ -1,0 +1,27 @@
+package nape.shape;
+$(import);
+
+!!/**
+!! * Enumeration of validation results for a Polygon.
+!! */
+Flags(ValidationResult,
+    !!/**
+    !! * Denotes polygon is valid for simulation in Nape.
+    !! */
+    prop(VALID,0)
+
+    !!/**
+    !! * Denotes polygon is degenerate (has zero area).
+    !! */
+    prop(DEGENERATE,1)
+
+    !!/**
+    !! * Denotes polygon is concave.
+    !! */
+    prop(CONCAVE,2)
+
+    !!/**
+    !! * Denotes polygon is self-intersecting.
+    !! */
+    prop(SELF_INTERSECTING,3)
+)

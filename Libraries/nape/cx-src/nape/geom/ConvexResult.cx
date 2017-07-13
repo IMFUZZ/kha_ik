@@ -1,0 +1,71 @@
+package nape.geom;
+$(import);
+
+!!/**
+!! * Class representing the results of a convex cast operation.
+!! * <br/><br/>
+!! * These objects are allocated from an object pool and can
+!! * be released back to that pool by calling its dispose method.
+!! */
+@:final class ConvexResult {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner):PR(ConvexRayResult) = null;
+
+    !!/**
+    !! * The normal of the surface at collision.
+    !! */
+    property(normal, Vec2, {
+        DEBUG(pr(inner).disposed();)
+        return pr(inner).normal;
+    })
+
+    !!/**
+    !! * The position of the collision.
+    !! */
+    property(position, Vec2, {
+        DEBUG(pr(inner).disposed();)
+        return pr(inner).position;
+    })
+
+    !!/**
+    !! * The time of impact to the collision
+    !! */
+    property(toi, Float, {
+        DEBUG(pr(inner).disposed();)
+        return pr(inner).toiDistance;
+    })
+
+    !!/**
+    !! * The shape which was collided against.
+    !! */
+    property(shape, Shape, {
+        DEBUG(pr(inner).disposed();)
+        return pr(inner).shape;
+    })
+
+    !!/**
+    !! * @private
+    !! */
+    flibopts(0)
+    public function new() {
+        DEBUG(if(!PR(ConvexRayResult).internal) throw "Error: ConvexResult cannot be instantiated derp!";)
+    }
+
+    !!/**
+    !! * Release ConvexResult object to pool.
+    !! */
+    public inline function dispose() {
+        DEBUG(pr(inner).disposed();)
+        pr(inner).free();
+    }
+
+    !!/**
+    !! * @private
+    !! */
+    @:$keep public function toString() {
+        DEBUG(pr(inner).disposed();)
+        return "{ shape: "+shape+" toi: "+toi+" }";
+    }
+}

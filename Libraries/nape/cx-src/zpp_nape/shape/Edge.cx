@@ -1,0 +1,75 @@
+package zpp_nape.shape;
+$(import);
+
+class PR(Edge) {
+    MixPool(PR(Edge))
+    flibmdel public inline function free() {
+        polygon = null;
+    }
+    flibmdel public inline function alloc() {}
+
+    public var polygon:PR(Polygon) = null;
+
+    static public var internal:Bool = false;
+    public var outer:Edge = null;
+
+    public function wrapper() {
+        if(outer==null) {
+            internal = true;
+            outer = new Edge();
+            internal = false;
+            outer.pr(inner) = this;
+        }
+        return outer;
+    }
+
+    vec_new(public,lnorm); public var wrap_lnorm:Vec2 = null;
+    vec_new(public,gnorm); public var wrap_gnorm:Vec2 = null;
+
+    public var length:Float = 0.0;
+    public var lprojection:Float = 0.0;
+    public var gprojection:Float = 0.0;
+
+    public var lp0:PR(Vec2) = null; public var gp0:PR(Vec2) = null;
+    public var lp1:PR(Vec2) = null; public var gp1:PR(Vec2) = null;
+    public var tp0:Float = 0.0; public var tp1:Float = 0.0; // normal × vertex (world coordinates)
+
+    //previously lambdas
+    private function lnorm_validate() {
+        DEBUG(if(polygon==null)
+            throw "Error: Edge not currently in use";
+        )
+        polygon.validate_laxi();
+        vec_set(wrap_lnorm.pr(inner).,lnorm);
+    }
+    private function gnorm_validate() {
+        DEBUG(
+            if(polygon==null)
+                throw "Error: Edge not currently in use";
+            if(polygon.body==null)
+                throw "Error: Edge worldNormal only makes sense if the parent Polygon is contained within a rigid body";
+        )
+
+        polygon.validate_gaxi();
+        vec_set(wrap_gnorm.pr(inner).,gnorm);
+    }
+
+    public function getlnorm() {
+        wrap_lnorm = Vec2.get(lnormx,lnormy);
+        wrap_lnorm.pr(inner)._immutable = true;
+        wrap_lnorm.pr(inner)._validate = lnorm_validate;
+    }
+    public function getgnorm() {
+        wrap_gnorm = Vec2.get(gnormx,gnormy);
+        wrap_gnorm.pr(inner)._immutable = true;
+        wrap_gnorm.pr(inner)._validate = gnorm_validate;
+    }
+
+    public function new() {
+        vec_set(lnorm,0,0);
+        vec_set(gnorm,0,0);
+        length = 0;
+        lprojection = 0;
+        gprojection = 0;
+    }
+}

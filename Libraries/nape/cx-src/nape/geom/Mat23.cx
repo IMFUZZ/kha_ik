@@ -1,0 +1,668 @@
+package nape.geom;
+$(import);
+
+!!/**
+!! * 2D Matrix class representing affine transformations:
+!! * <pre>
+!! * [ a  b  tx ]
+!! * [ c  d  ty ]
+!! * [ 0  0  1  ]
+!! * </pre>
+!! *
+!! * Note that in AS3, flash.geom.Matrix has 'b' and 'c' swapped! so if you are
+!! * converting between flash.geom.Matrix and nape.geom.Mat23 you should use the
+!! * methods provided to avoid any mistakes with this.
+!! *
+!! */
+@:final class Mat23 {
+    !!/**
+    !! * @private
+    !! */
+    public var pr(inner):PR(Mat23) = null;
+
+    $(mixin comp(n)
+        property(n,Float,{
+            return pr(inner).n;
+        },{
+            DEBUG(
+                if (isNaN(n)) {
+                    throw "Error: Mat23::"+$str(n)+" cannot be NaN";
+                }
+            )
+
+            pr(inner).n = n;
+            pr(inner).invalidate();
+        })
+    );
+    !!/**
+    !! * The (1,1) entry in Mat23:
+    !! * <br/><br/>
+    !! * <pre>
+    !! * [ a  .  . ]
+    !! * [ .  .  . ]
+    !! * </pre>
+    !! *
+    !! * @default 1
+    !! */
+    comp(a)
+
+    !!/**
+    !! * The (1,2) entry in Mat23:
+    !! * <br/><br/>
+    !! * <pre>
+    !! * [ .  b  . ]
+    !! * [ .  .  . ]
+    !! * </pre>
+    !! *
+    !! * @default 0
+    !! */
+    comp(b)
+
+    !!/**
+    !! * The (2,1) entry in Mat23:
+    !! * <br/><br/>
+    !! * <pre>
+    !! * [ .  .  . ]
+    !! * [ c  .  . ]
+    !! * </pre>
+    !! *
+    !! * @default 0
+    !! */
+    comp(c)
+
+    !!/**
+    !! * The (2,2) entry in Mat23:
+    !! * <br/><br/>
+    !! * <pre>
+    !! * [ .  .  . ]
+    !! * [ .  d  . ]
+    !! * </pre>
+    !! *
+    !! * @default 1
+    !! */
+    comp(d)
+
+    !!/**
+    !! * The (1,3) entry in Mat23 which represents x translation
+    !! * <br/><br/>
+    !! * <pre>
+    !! * [ .  .  tx ]
+    !! * [ .  .  .  ]
+    !! * </pre>
+    !! *
+    !! * @default 0
+    !! */
+    comp(tx)
+
+    !!/**
+    !! * The (2,3) entry in Mat23 which represents y translation
+    !! * <br/><br/>
+    !! * <pre>
+    !! * [ .  .  .  ]
+    !! * [ .  .  ty ]
+    !! * </pre>
+    !! *
+    !! * @default 0
+    !! */
+    comp(ty)
+
+    !!/**
+    !! * Construct new Mat23.
+    !! * <br/><br/>
+    !! * <pre>
+    !! * [ a  b  tx ]
+    !! * [ c  d  ty ]
+    !! * </pre>
+    !! *
+    !! * @param a  The (1,1) entry in matrix (default 1)
+    !! * @param b  The (1,2) entry in matrix (default 0)
+    !! * @param c  The (2,1) entry in matrix (default 0)
+    !! * @param d  The (2,2) entry in matrix (default 1)
+    !! * @param tx The (1,3) entry in matrix (default 0)
+    !! * @param ty The (2,3) entry in matrix (default 0)
+    !! * @return   The newly constructed Mat23.
+    !! */
+    public function new(
+        a:Float  = 1.0, b:Float  = 0.0,
+        c:Float  = 0.0, d:Float  = 1.0,
+        tx:Float = 0.0, ty:Float = 0.0
+    ) {
+        pr(inner) = PR(Mat23).get();
+        pr(inner).outer = this;
+        this.a = a; this.b = b; this.tx = tx;
+        this.c = c; this.d = d; this.ty = ty;
+    }
+
+    !!/**
+    !! * Produce copy of this Mat23
+    !! *
+    !! * @return The new Mat23 representing copy of this.
+    !! */
+    keep public function copy() {
+        return new Mat23(a, b, c, d, tx, ty);
+    }
+
+    !!/**
+    !! * Set values of matrix from another.
+    !! *
+    !! * @param matrix The matrix to copy values from.
+    !! * @return       A reference to this Mat23.
+    !! * @throws # if matrix argument is null.
+    !! */
+    public function set(matrix:Mat23):Mat23 {
+        DEBUG(
+            if (matrix == null) {
+                throw "Error: Cannot set form null matrix";
+            }
+        )
+
+        pr(inner).set(matrix.pr(inner));
+        pr(inner).invalidate();
+        return this;
+    }
+
+    !!/**
+    !! * Set values of matrix from numbers.
+    !! * <br/><br/>
+    !! * So that: <code>mat.setAs(...)</code> is
+    !! * semantically equivalent to: <code>mat.set(new Mat23(...))</code>
+    !! * <br/><br/>
+    !! * @param a  The value to which the (1,1) entry will be set (default 1)
+    !! * @param b  The value to which the (1,2) entry will be set (default 0)
+    !! * @param c  The value to which the (2,1) entry will be set (default 0)
+    !! * @param d  The value to which the (2,2) entry will be set (default 1)
+    !! * @param tx The value to which the (1,3) entry will be set (default 0)
+    !! * @param ty The value to which the (2,3) entry will be set (default 0)
+    !! * @return   A reference to this Mat23.
+    !! */
+    public function setAs(
+        a:Float =1.0, b:Float =0.0,
+        c:Float =0.0, d:Float =1.0,
+        tx:Float=0.0, ty:Float=0.0
+    ):Mat23 {
+        pr(inner).setas(a, b, c, d, tx, ty);
+        pr(inner).invalidate();
+        return this;
+    }
+
+    !!/**
+    !! * Reset matrix to identity.
+    !! * <br/><br/>
+    !! * Equivalent to calling setAs with default argument values.
+    !! * <br/><br/>
+    !! * @return A reference to this Mat23.
+    !! */
+    public inline function reset():Mat23 {
+        return setAs();
+    }
+
+    #if (flash9||openfl||nme)
+        //
+        // NOTE: Difference in naming of coordinates!
+        //
+
+        !!/**
+        !! * Create a Mat23 matrix from a given AS3 flash.geom.Matrix.
+        !! * <br/><br/>
+        !! * This method should be used in preference to doing so manually
+        !! * as the allocation of matrix entries to name is different and
+        !! * it is easy to make this mistake!
+        !! * <br/><br/>
+        !! * This method is only available on <code>flash</code> and
+        !! * <code>openfl||nme</code> targets.
+        !! *
+        !! * @param matrix The AS3 Matrix to create Mat23 from. This value must
+        !! *               not be null.
+        !! * @return       The constructed Mat23 matching AS3 Matrix.
+        !! */
+        keep public static function fromMatrix(matrix:flash.geom.Matrix):Mat23 {
+            var m = matrix;
+            return new Mat23(m.a, m.c, m.b, m.d, m.tx, m.ty);
+        }
+
+        !!/**
+        !! * Create an AS3 flash.geom.Matrix from this Mat23.
+        !! * <br/><br/>
+        !! * This method should be used in preference to doing so manually
+        !! * as the allocation of matrix entries to name is different and
+        !! * it is easy to make this mistake!
+        !! *
+        !! * @param output If supplied, this Matrix will have its properties
+        !! *               populated insteaad of creating a new Matrix.
+        !! * @preturn The constructed AS3 Matrix.
+        !! */
+        keep public function toMatrix(output:flash.geom.Matrix = null):flash.geom.Matrix {
+            if (output == null) output = new flash.geom.Matrix();
+            output.a = a;
+            output.b = c;
+            output.c = b;
+            output.d = d;
+            output.tx = tx;
+            output.ty = ty;
+            return output;
+        }
+    #end
+
+    !!/**
+    !! * Construct a Mat23 representing a clockwise rotation.
+    !! *
+    !! * <pre>
+    !! * [ cos angle  -sin angle  0 ]
+    !! * [ sin angle   cos angle  0 ]
+    !! * </pre>
+    !! *
+    !! * @param angle The clockwise rotation in radians
+    !! * @return      The rotation matrix.
+    !! */
+    keep public static function rotation(angle:Float):Mat23 {
+        DEBUG(
+            if (isNaN(angle)) {
+                throw "Error: Cannot create rotation matrix with NaN angle";
+            }
+        )
+
+        var cos = Math.cos(angle);
+        var sin = Math.sin(angle);
+        return new Mat23(cos, -sin, sin, cos, 0, 0);
+    }
+
+    !!/**
+    !! * Construct a Mat23 representing a translation
+    !! *
+    !! * <pre>
+    !! * [ 1  0  tx ]
+    !! * [ 0  1  ty ]
+    !! * </pre>
+    !! *
+    !! * @param tx The x translation.
+    !! * @param ty The y translation.
+    !! * @return   The translation matrix.
+    !! */
+    keep public static function translation(tx:Float, ty:Float):Mat23 {
+        return new Mat23(1, 0, 0, 1, tx, ty);
+    }
+
+    !!/**
+    !! * Construct a Mat23 representing a scaling
+    !! *
+    !! * <pre>
+    !! * [ sx  0  0 ]
+    !! * [ 0  sy  0 ]
+    !! * </pre>
+    !! *
+    !! * @param sx The x factor of scaling.
+    !! * @param sy The y factor of scaling.
+    !! * @return   The scaling matrix.
+    !! */
+    keep public static function scale(sx:Float, sy:Float):Mat23 {
+        return new Mat23(sx, 0, 0, sy, 0, 0);
+    }
+
+    !!/**
+    !! * (readonly) The determinant of this matrix.
+    !! * <br/><br/>
+    !! * This represents the factor of change in area
+    !! * for a region of the plane after transformation by matrix.
+    !! * <br/><br/>
+    !! * A determinant of 0 signifies that the matrix is not invertible.
+    !! * <br/><br/>
+    !! * A negative determinant signifies that for example, a clockwise wound
+    !! * polygon would be transformed into a counter-clockwise polygon.
+    !! *
+    !! * @default 1
+    !! */
+    property(determinant, Float, {
+        // TODO: Cache this? Probably not necessary... ever :)
+        return (a * d) - (b * c);
+    })
+
+    !!/**
+    !! * Determine if the matrix is singular.
+    !! * This check is based on computing the condition number of the matrix
+    !! * by the Frobenius norm, and comparing against 2 / epsilon.
+    !! * <br/><br/>
+    !! * If matrix is singular, then inversion of the matrix cannot be performed
+    !! *
+    !! * @return True, if matrix is singular.
+    !! */
+    keep public function singular():Bool {
+        var norm = (a * a) + (b * b) + (c * c) + (d * d);
+        var limit = determinant;
+        if (limit < 0) limit = -limit;
+
+        return (norm > (Config.illConditionedThreshold * limit));
+    }
+
+    !!/**
+    !! * Compute the inverse of this matrix, returning the inverse in a new
+    !! * Mat23 object.
+    !! * <br/><br/>
+    !! * The inverse is such that mat.concat(mat.inverse()) is the identity
+    !! * matrix, as well as mat.inverse().concat(mat)
+    !! *
+    !! * @return The inverse matrix.
+    !! * @throws # If matrix is singular.
+    !! */
+    keep public function inverse():Mat23 {
+        DEBUG(
+            if (singular()) {
+                throw "Error: Matrix is singular and cannot be inverted";
+            }
+        )
+
+        var idet = 1.0 / determinant;
+        return new Mat23(
+            (d * idet),  (-b * idet),
+            (-c * idet), (a * idet),
+            ((b * ty) - (d * tx)) * idet,
+            ((c * tx) - (a * ty)) * idet
+        );
+    }
+
+    !!/**
+    !! * Compute the transpose of this matrix, returning the transpose in a new
+    !! * Mat23 object.
+    !! * <br/><br/>
+    !! * Technically speaking, we cannot transpose a matrix if the tx/ty values
+    !! * are non-zero as the implicit bottom row of matrix must be (0, 0, 1)
+    !! * so the tx/ty values of output matrix are set so that should the main
+    !! * 2x2 block of the matrix be orthogonal (Representing a rotation), then
+    !! * the transpose will be able to act as the matrix inverse.
+    !! * <pre>
+    !! * var mat = Mat23.rotation(..).concat(Mat23.translation(...));
+    !! * trace(mat.concat(mat.transpose())); // Identity matrix
+    !! * trace(mat.concat(mat.inverse())); // Identity matrix
+    !! * </pre>
+    !! * If the main 2x2 block of matrix is 'not' orthogonal, then the transpose
+    !! * will not be equal to the inverse.
+    !! *
+    !! * @return The transposed matrix.
+    !! */
+    keep public function transpose():Mat23 {
+        return new Mat23(a, c, b, d, -a*tx-c*ty, -b*tx-d*ty);
+    }
+
+    !!/**
+    !! * Concatenate matrices (left-multiplication), returning new Mat23.
+    !! * <br/><br/>
+    !! * <code>mat1.concat(mat2)</code> is the transformation that first
+    !! * performs transformation represented by mat1, followed by transformation
+    !! * represented by mat2.
+    !! * <br/>
+    !! *
+    !! * @param matrix Matrix to concatenate with.
+    !! * @return       The result of the concatenation.
+    !! * @throws # If matrix argument is null.
+    !! */
+    keep public function concat(matrix:Mat23):Mat23 {
+        var m = matrix;
+        DEBUG (
+            if (m == null) {
+                throw "Error: Cannot concatenate with null Mat23";
+            }
+        )
+
+        return new Mat23(
+            ((m.a * a) + (m.b * c)), ((m.a * b) + (m.b * d)),
+            ((m.c * a) + (m.d * c)), ((m.c * b) + (m.d * d)),
+            (m.a * tx) + (m.b * ty) + m.tx,
+            (m.c * tx) + (m.d * ty) + m.ty
+        );
+    }
+
+    !!/**
+    !! * Transform a Vec2 by this matrix in new Vec2.
+    !! * <br/><br/>
+    !! * The Vec2 object will be allocated form the global object pool.
+    !! *
+    !! * @param point         The Vec2 to transform by this matrix.
+    !! * @param noTranslation If true, then the input Vec2 will be treat as a
+    !! *                      vector, rather than a point with the tx/ty values
+    !! *                      treat as 0. (default false)
+    !! * @param weak          If true, then the allocated Vec2 will be
+    !! *                      automatically released to global object pool when
+    !! *                      used as an argument to a Nape function.
+    !! * @return              The result of the transformation as a newly
+    !! *                      allocated (possibly weak) Vec2. (default false)
+    !! * @throws # If point argument is null.
+    !! */
+    keep public function transform(
+        point:Vec2,
+        noTranslation:Bool = false,
+        weak:Bool = false
+    ):Vec2 {
+        Disposed(point, Vec2);
+        DEBUG(
+            if (point == null) {
+                throw "Error: Cannot transform null Vec2";
+            }
+        )
+
+        var ret:Vec2;
+        if (noTranslation)
+        {
+            ret = Vec2.get(
+                (point.x * a) + (point.y * b),
+                (point.x * c) + (point.y * d),
+                weak
+            );
+        }
+        else {
+            ret = Vec2.get(
+                (point.x * a) + (point.y * b) + tx,
+                (point.x * c) + (point.y * d) + ty,
+                weak
+            );
+        }
+
+        WEAK(point);
+        return ret;
+    }
+
+    //
+    // Matrix reverse transformation.
+    // No assumption (about from non-singularity) is made.
+    // If performing many times, should either cache a transpose
+    // Or contribute an: inverse.orthogonal.transform or something :P
+    //
+    !!/**
+    !! * Perform inverse transformation with Vec2, returning new Vec2.
+    !! * <br/><br/>
+    !! * The matrix inverse will be performed implicitly and should this
+    !! * method be called many times for the same Mat23, it would be better
+    !! * to instead compute the matrix inverse only once.
+    !! * <br/><br/>
+    !! * The new Vec2 will be allocated from the global object pool.
+    !! *
+    !! * @param point         The Vec2 to transform.
+    !! * @param noTranslation If true then the input Vec2 will be treat as a
+    !! *                      vector instead of a point, treating the tx/ty
+    !! *                      values of this Mat23 as though they were 0.
+    !! *                      (default false)
+    !! * @param weak          If true, then the allocated Vec2 will be
+    !! *                      automatically released to global object pool when
+    !! *                      used as an argument to a Nape function.
+    !! * @return              The result of the transformation as a newly
+    !! *                      allocated (possibly weak) Vec2. (default false)
+    !! * @throws # If matrix is singular.
+    !! * @throws # If point argument is null.
+    !! */
+    keep public function inverseTransform(
+        point:Vec2,
+        noTranslation:Bool = false,
+        weak:Bool = false
+    ):Vec2 {
+        Disposed(point, Vec2);
+        DEBUG(
+            if (point == null) {
+                throw "Error: Cannot transform null Vec2";
+            }
+            if (singular()) {
+                throw "Error: Matrix is singular and inverse transformation cannot be performed";
+            }
+        )
+        var idet = 1.0/determinant;
+
+        var ret:Vec2;
+        if (noTranslation)
+        {
+            ret = Vec2.get(
+                ((point.x * d) - (point.y * b)) * idet,
+                ((point.y * a) - (point.x * c)) * idet,
+                weak
+            );
+        }
+        else {
+            var dx = point.x - tx;
+            var dy = point.y - ty;
+            ret = Vec2.get(
+                ((dx * d) - (dy * b)) * idet,
+                ((dy * a) - (dx * c)) * idet,
+                weak
+            );
+        }
+
+        WEAK(point);
+        return ret;
+    }
+
+    !!/**
+    !! * @private
+    !! */
+    @:$keep public function toString():String {
+        return "{ a: "+a+ " b: "+b+" c: "+c+" d: "+d+" tx: "+tx+" ty: "+ty+" }";
+    }
+
+    !!/**
+    !! * Determine if matrix is equiorthogonal
+    !! * <br/><br/>
+    !! * This is a term I invented after
+    !! * failing to find an existing name. It describes that this matrix maps
+    !! * circles into other circles (of not necessarigly the same radius). In
+    !! * otherwords the matrix can be decomposed into a rotation, translation
+    !! * and scaling of equal x/y factors.
+    !! * <br/><br/>
+    !! * This property is required for any Mat23 that is used to transform a
+    !! * Circle, or any Body containing a Circle, or to transform a Debug view.
+    !! * <br/><br/>
+    !! * This is a weaker property than orthogonality which describes a mapping
+    !! * to a circle of equal radius.
+    !! * <br/><br/>
+    !! * Mathematically speaking a matrix is equiorthogonal iff.
+    !! * <code>transpose(M) * M = kI</code> for some non-zero scalar k.
+    !! *
+    !! * @return True if matrix is equiorthogonal.
+    !! */
+    keep public function equiorthogonal():Bool {
+        if (singular()) {
+            return false;
+        }
+        else {
+            var x = (a * b) + (c * d);
+            if ((x * x) < Config.epsilon) {
+                //determine if all vectors are scaled equally.
+                var y = (a * a) + (b * b) - (c * c) - (d * d);
+                return (y * y) < Config.epsilon;
+            }
+            else {
+                return false;
+            }
+        }
+    }
+
+    !!/**
+    !! * Determine if matrix is orthogonal
+    !! * <br/><br/>
+    !! * This property describes a matrix
+    !! * which maps circles into other circles of equal radius. In otherwords
+    !! * the matrix can be decomposed into a rotation and a translation.
+    !! * <br/><br/>
+    !! * Mathematically speaking a matrix is orthogonal iff.
+    !! * <code>transpose(M) * M = I</code>.
+    !! *
+    !! * @return True if matrix is orthogonal.
+    !! */
+    keep public function orthogonal():Bool {
+        var x = (a * b) + (c * d);
+        if ((x * x) < Config.epsilon) {
+            var y = (a * a) + (b * b) - 1;
+            var z = (c * c) + (d * d) - 1;
+            return (y * y) < Config.epsilon && (z * z) < Config.epsilon;
+        }
+        else {
+            return false;
+        }
+    }
+
+    $(mixin Xalise(n,kdef)
+        keep public function n`ise():Mat23 {
+            if (!n()) {
+                var k1 = Math.sqrt((a * a) + (c * c));
+                var k2 = Math.sqrt((b * b) + (d * d));
+                DEBUG(
+                    if ((k1 * k1) < Config.epsilon
+                     || (k2 * k2) < Config.epsilon) {
+                        throw "Error: Matrix is singular and cannot be "+$str(n)+"ised";
+                    }
+                )
+
+                // Determine how matrix basis vectors must be scaled.
+                var k = kdef;
+                k1 = k / k1; k2 = k / k2;
+
+                a *= k1; c *= k1;
+                b *= k2; d *= k2;
+
+                // Determine minimum rotation required to make vectors
+                // orthogonal.
+                //
+                // We perform this rotation by a half on each basis vector
+                // Rather than keeping one fixed and rotating the other.
+                var dot = (a * b) + (c * d);
+                var ang = 0.25 * Math.PI - 0.5 * Math.acos(dot / (k * k));
+                if (determinant > 0)
+                {
+                    ang = -ang;
+                }
+
+                var sin = Math.sin(ang);
+                var cos = Math.cos(ang);
+
+                var a2 = (a * cos) - (c * sin);
+                var b2 = (b * cos) + (d * sin);
+                c = (c * cos) + (a * sin); a = a2;
+                d = (d * cos) - (b * sin); b = b2;
+
+                pr(inner).invalidate();
+            }
+
+            return this;
+        }
+    );
+
+    !!/**
+    !! * Equiorthogonalise matrix.
+    !! * <br/><br/>
+    !! * We do this by finding the 'nearest' orthogonal matrix;
+    !! * scaling the basis vectors of matrix to their mean length
+    !! * and applying an equal and opposite rotation to each basis vector to
+    !! * make them perpendicular.
+    !! *
+    !! * @return A reference to this Mat23.
+    !! * @throws # If matrix is singular.
+    !! */
+    Xalise(equiorthogonal, (k1 + k2) / 2)
+
+    !!/**
+    !! * Orthogonalise matrix.
+    !! * <br/><br/>
+    !! * We do this by finding the 'nearest' orthogonal matrix;
+    !! * normalising the basis vectors of matrix
+    !! * and applying an equal and opposite rotation to each basis vector to
+    !! * make them perpendicular.
+    !! *
+    !! * @return A reference to this Mat23.
+    !! * @throws # If matrix is singular.
+    !! */
+    Xalise(orthogonal, 1)
+}
