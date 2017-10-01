@@ -32,8 +32,7 @@
 					"type": "vec4"
 				}
 			],
-			"uniforms": [],
-			"types": []
+			"uniforms": []
 		},
 		{
 			"name": "painter_colored_vert",
@@ -70,29 +69,6 @@
 					"name": "projectionMatrix",
 					"type": "mat4"
 				}
-			],
-			"types": [
-				{
-					"name": "gl_PerVertex",
-					"members": [
-						{
-							"type": "vec4",
-							"name": "gl_Position"
-						},
-						{
-							"type": "float",
-							"name": "gl_PointSize"
-						},
-						{
-							"type": "float[]",
-							"name": "gl_ClipDistance"
-						},
-						{
-							"type": "float[]",
-							"name": "gl_CullDistance"
-						}
-					]
-				}
 			]
 		},
 		{
@@ -122,8 +98,7 @@
 					"name": "tex",
 					"type": "sampler2D"
 				}
-			],
-			"types": []
+			]
 		},
 		{
 			"name": "painter_image_vert",
@@ -168,29 +143,6 @@
 					"name": "projectionMatrix",
 					"type": "mat4"
 				}
-			],
-			"types": [
-				{
-					"name": "gl_PerVertex",
-					"members": [
-						{
-							"type": "vec4",
-							"name": "gl_Position"
-						},
-						{
-							"type": "float",
-							"name": "gl_PointSize"
-						},
-						{
-							"type": "float[]",
-							"name": "gl_ClipDistance"
-						},
-						{
-							"type": "float[]",
-							"name": "gl_CullDistance"
-						}
-					]
-				}
 			]
 		},
 		{
@@ -220,8 +172,7 @@
 					"name": "tex",
 					"type": "sampler2D"
 				}
-			],
-			"types": []
+			]
 		},
 		{
 			"name": "painter_text_vert",
@@ -266,29 +217,6 @@
 					"name": "projectionMatrix",
 					"type": "mat4"
 				}
-			],
-			"types": [
-				{
-					"name": "gl_PerVertex",
-					"members": [
-						{
-							"type": "vec4",
-							"name": "gl_Position"
-						},
-						{
-							"type": "float",
-							"name": "gl_PointSize"
-						},
-						{
-							"type": "float[]",
-							"name": "gl_ClipDistance"
-						},
-						{
-							"type": "float[]",
-							"name": "gl_CullDistance"
-						}
-					]
-				}
 			]
 		},
 		{
@@ -318,8 +246,7 @@
 					"name": "tex",
 					"type": "samplerVideo"
 				}
-			],
-			"types": []
+			]
 		},
 		{
 			"name": "painter_video_vert",
@@ -363,29 +290,6 @@
 				{
 					"name": "projectionMatrix",
 					"type": "mat4"
-				}
-			],
-			"types": [
-				{
-					"name": "gl_PerVertex",
-					"members": [
-						{
-							"type": "vec4",
-							"name": "gl_Position"
-						},
-						{
-							"type": "float",
-							"name": "gl_PointSize"
-						},
-						{
-							"type": "float[]",
-							"name": "gl_ClipDistance"
-						},
-						{
-							"type": "float[]",
-							"name": "gl_CullDistance"
-						}
-					]
 				}
 			]
 		}

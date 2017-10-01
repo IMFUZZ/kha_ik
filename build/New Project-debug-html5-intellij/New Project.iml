@@ -15,18 +15,18 @@
     <output url="file://$MODULE_DIR$/../debug-html5" />
     <exclude-output />
     <content url="file://$MODULE_DIR$/../..">
-      <sourceFolder url="file:///home/gunther/KodeStudio-linux64/resources/app/extensions/kha/Kha/Sources" isTestSource="false" />
-      <sourceFolder url="file:///home/gunther/KodeStudio-linux64/resources/app/extensions/kha/Kha/Backends/HTML5" isTestSource="false" />
-      <sourceFolder url="file:///mnt/shared/Repos/kha_ik/Sources" isTestSource="false" />
-      <sourceFolder url="file:///mnt/shared/Repos/kha_ik/Libraries/nape/Sources" isTestSource="false" />
-      <sourceFolder url="file:///mnt/shared/Repos/kha_ik/Libraries/zui/Sources" isTestSource="false" />
+      <sourceFolder url="file:///home/gunther/Downloads/KodeStudio-linux64/resources/app/extensions/kha/Kha/Sources" isTestSource="false" />
+      <sourceFolder url="file:///home/gunther/Downloads/KodeStudio-linux64/resources/app/extensions/kha/Kha/Backends/HTML5" isTestSource="false" />
+      <sourceFolder url="file:///home/gunther/Documents/repos/kha_ik/Sources" isTestSource="false" />
+      <sourceFolder url="file:///home/gunther/Documents/repos/kha_ik/Libraries/nape/Sources" isTestSource="false" />
+      <sourceFolder url="file:///home/gunther/Documents/repos/kha_ik/Libraries/zui/Sources" isTestSource="false" />
 
     </content>
     <content url="file://Libraries/nape">
-      <sourceFolder url="file:///mnt/shared/Repos/kha_ik/Libraries/nape" isTestSource="false" />
+      <sourceFolder url="file:///home/gunther/Documents/repos/kha_ik/Libraries/nape" isTestSource="false" />
     </content>
     <content url="file://Libraries/zui">
-      <sourceFolder url="file:///mnt/shared/Repos/kha_ik/Libraries/zui" isTestSource="false" />
+      <sourceFolder url="file:///home/gunther/Documents/repos/kha_ik/Libraries/zui" isTestSource="false" />
     </content>
     
     <orderEntry type="jdk" jdkName="Haxe 3.2.0" jdkType="Haxe toolkit" />
